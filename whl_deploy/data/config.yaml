@@ -1,0 +1,29 @@
+# Configuration for data import
+import_data:
+  bazel_cache: "http://example.com/data/bazel_repo_cache.tar.gz"
+  docker_image: "path/to/my_docker_images.tar"
+  source_code: "https://gitee.com/daohu527/apollo-lite/repository/archive/main.zip"
+  maps:
+    - name: "beijing_map_v1"
+      source: "path/to/beijing_map_v1.tar.gz"
+    - name: "shanghai_map_v2"
+      source: "http://example.com/data/shanghai_map_v2.tar.gz"
+  models:
+    - name: "lidar_perception_v1"
+      source: "path/to/models/lidar_perception_v1.tar.gz"
+    - name: "camera_detection_v3"
+      source: "http://example.com/data/models/camera_detection_v3.tar.gz"
+
+# Configuration for data export
+export_data:
+  bazel_cache: "exported_bazel_cache.tar.gz" # Output filename
+  source_code: "exported_apollo_core_v7.tar.gz"
+  docker_image: "exported_docker_image.tar"
+  maps:
+    - name: "beijing_map_v1"
+      output: "exported_beijing_map_v1.tar.gz"
+    - name: "shanghai_map_v2"
+      output: "exported_shanghai_map_v2.tar.gz"
+  models:
+    - name: "lidar_perception_v1"
+      output: "exported_lidar_perception_v1.tar.gz"
