@@ -56,18 +56,16 @@ class SourcePackageManager:
         Checks if the script has necessary root privileges for critical operations.
         Raises PermissionError if write access is denied for crucial directories.
         """
-        if os.geteuid() != 0:
-            warning("It is highly recommended to run this script with root (sudo) privileges "
-                    f"for operations on '{self.source_base_dir}'.")
-            # Check write access to the parent directory of SOURCE_BASE_DIR
-            # This ensures that even if /opt/apollo doesn't exist, we can create it.
-            # Use Path.parent for parent directory.
-            base_dir_parent = self.source_base_dir.parent
-            if not os.access(base_dir_parent, os.W_OK):
-                raise PermissionError(f"No write access to '{base_dir_parent}'. "
-                                      "Please run with sudo to create/manage source directories.")
-        else:
-            info("Running with root privileges.")
+
+        warning("It is highly recommended to run this script with root (sudo) privileges "
+                f"for operations on '{self.source_base_dir}'.")
+        # Check write access to the parent directory of SOURCE_BASE_DIR
+        # This ensures that even if /opt/apollo doesn't exist, we can create it.
+        # Use Path.parent for parent directory.
+        base_dir_parent = self.source_base_dir.parent
+        if not os.access(base_dir_parent, os.W_OK):
+            raise PermissionError(f"No write access to '{base_dir_parent}'. "
+                                    "Please run with sudo to create/manage source directories.")
 
     def _ensure_source_base_dir(self) -> None:
         """Ensures the source base directory (/opt/apollo) exists and has correct permissions."""

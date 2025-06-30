@@ -4,7 +4,7 @@ import urllib.request
 from urllib.error import URLError, HTTPError
 import subprocess
 import tempfile
-from typing import List, Optional
+from typing import List, Optional, Union
 from urllib.parse import urlparse
 from pathlib import Path
 

@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from common import (
+from whl_deploy.common import (
     execute_command,
     CommandExecutionError,
     info,
@@ -39,10 +39,6 @@ class HostConfigManager:
     def _check_pre_conditions(self) -> None:
         """Checks essential prerequisites before starting any host setup."""
         info("Checking host setup pre-conditions...")
-
-        if os.geteuid() != 0:
-            raise PermissionError(
-                "This script must be run with root privileges (sudo).")
 
         if not self.apollo_root_dir.is_dir():
             raise RuntimeError(f"APOLLO_ROOT_DIR ('{self.apollo_root_dir}') not found or is not a directory. "

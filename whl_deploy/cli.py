@@ -45,12 +45,11 @@ class HostSetupOrchestrator:
         self.nvidia_toolkit_manager = NvidiaToolkitManager(
             mirror_region=self.mirror_region)
         self.host_config_manager = HostConfigManager()
-        self.cache_manager = CacheManager(logger_instance=logger)
-        self.docker_image_manager = DockerImageManager(logger_instance=logger)
-        self.map_manager = MapManager(logger_instance=logger)
-        self.model_manager = ModelManager(logger_instance=logger)
-        self.source_package_manager = SourcePackageManager(
-            logger_instance=logger)
+        self.cache_manager = CacheManager()
+        self.docker_image_manager = DockerImageManager()
+        self.map_manager = MapManager()
+        self.model_manager = ModelManager()
+        self.source_package_manager = SourcePackageManager()
 
     # --- Environment Setup ---
     def setup_docker(self, uninstall: bool = False):

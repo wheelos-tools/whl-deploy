@@ -3,7 +3,7 @@
 import os
 import platform
 from pathlib import Path
-from common import (
+from whl_deploy.common import (
     get_os_info,
     execute_command,
     CommandExecutionError,
@@ -40,9 +40,7 @@ class DockerManager:
     def _check_pre_conditions(self) -> None:
         """Checks pre-conditions necessary for Docker installation/uninstallation."""
         info("Checking pre-conditions...")
-        if os.geteuid() != 0:
-            raise PermissionError(
-                "This script must be run with root privileges (sudo).")
+
         if self.os_info.get('id') != "ubuntu":
             raise RuntimeError(
                 f"Unsupported OS: {self.os_info.get('id')}. This script is for Ubuntu.")

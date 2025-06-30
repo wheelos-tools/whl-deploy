@@ -38,23 +38,17 @@ class MapManager:
 
     def _check_permissions(self) -> None:
         """Checks if the script has necessary permissions for map operations."""
-        if os.geteuid() != 0:
-            warning(
-                "It is highly recommended to run this script with root (sudo) privileges, "
-                f"especially for operations on '{self.map_base_dir}'.")
 
-            # Check write access to the base directory itself if it exists.
-            # If it doesn't exist, check parent for creation permission.
-            if self.map_base_dir.exists():
-                if not os.access(self.map_base_dir, os.W_OK):
-                    raise PermissionError(f"No write access to '{self.map_base_dir}'. "
-                                          "Please run with sudo.")
-            else:  # map_base_dir does not exist
-                if not os.access(self.map_base_dir.parent, os.W_OK):
-                    raise PermissionError(f"No write access to create '{self.map_base_dir}'. "
-                                          "Please run with sudo.")
-        else:
-            info("Running with root privileges.")
+        # Check write access to the base directory itself if it exists.
+        # If it doesn't exist, check parent for creation permission.
+        if self.map_base_dir.exists():
+            if not os.access(self.map_base_dir, os.W_OK):
+                raise PermissionError(f"No write access to '{self.map_base_dir}'. "
+                                        "Please run with sudo.")
+        else:  # map_base_dir does not exist
+            if not os.access(self.map_base_dir.parent, os.W_OK):
+                raise PermissionError(f"No write access to create '{self.map_base_dir}'. "
+                                        "Please run with sudo.")
 
     def _ensure_base_dir_exists(self) -> None:
         """Ensures the map base directory exists and has appropriate permissions."""

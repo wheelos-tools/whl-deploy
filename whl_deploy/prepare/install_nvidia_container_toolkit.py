@@ -4,7 +4,7 @@ import os
 import platform
 import re
 from pathlib import Path
-from common import (
+from whl_deploy.common import (
     get_os_info,
     execute_command,
     CommandExecutionError,
@@ -110,10 +110,6 @@ class NvidiaToolkitManager:
     def _check_pre_conditions(self) -> None:
         """Checks pre-conditions necessary for NVIDIA Container Toolkit installation."""
         info("Checking NVIDIA Container Toolkit pre-conditions...")
-
-        if os.geteuid() != 0:
-            raise PermissionError(
-                "This script must be run with root privileges (sudo).")
 
         if self.os_info.get('id') != "ubuntu":
             raise RuntimeError(
@@ -311,7 +307,7 @@ class NvidiaToolkitManager:
                         capture_output=False)
         info("Docker service restarted.")
 
-    def install_nvidia_container_toolkit(self) -> int:
+    def install(self) -> int:
         """Installs NVIDIA Container Toolkit by orchestrating all steps."""
         info("Starting NVIDIA Container Toolkit installation process...")
         try:
@@ -343,14 +339,11 @@ class NvidiaToolkitManager:
                 f"An unexpected critical error occurred during NVIDIA Container Toolkit installation: {e}")
             return 1
 
-    def uninstall_nvidia_container_toolkit(self) -> int:
+    def uninstall(self) -> int:
         """Uninstalls NVIDIA Container Toolkit and associated components."""
         info("Starting NVIDIA Container Toolkit uninstallation process...")
         try:
             # Re-check pre-conditions for sudo and OS type, not other Docker/NVIDIA deps
-            if os.geteuid() != 0:
-                raise PermissionError(
-                    "This script must be run with root privileges (sudo) for uninstallation.")
             if self.os_info.get('id') != "ubuntu":
                 raise RuntimeError(
                     f"Unsupported operating system: {self.os_info.get('id')}. This script is designed for Ubuntu.")

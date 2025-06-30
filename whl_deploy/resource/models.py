@@ -38,21 +38,15 @@ class ModelManager:
 
     def _check_permissions(self) -> None:
         """Checks if the script has necessary permissions for model operations."""
-        if os.geteuid() != 0:
-            warning(
-                "It is highly recommended to run this script with root (sudo) privileges, "
-                f"especially for operations on '{self.model_base_dir}'.")
 
-            if self.model_base_dir.exists():
-                if not os.access(self.model_base_dir, os.W_OK):
-                    raise PermissionError(f"No write access to '{self.model_base_dir}'. "
-                                          "Please run with sudo.")
-            else:  # model_base_dir does not exist
-                if not os.access(self.model_base_dir.parent, os.W_OK):
-                    raise PermissionError(f"No write access to create '{self.model_base_dir}'. "
-                                          "Please run with sudo.")
-        else:
-            info("Running with root privileges.")
+        if self.model_base_dir.exists():
+            if not os.access(self.model_base_dir, os.W_OK):
+                raise PermissionError(f"No write access to '{self.model_base_dir}'. "
+                                        "Please run with sudo.")
+        else:  # model_base_dir does not exist
+            if not os.access(self.model_base_dir.parent, os.W_OK):
+                raise PermissionError(f"No write access to create '{self.model_base_dir}'. "
+                                        "Please run with sudo.")
 
     def _ensure_base_dir_exists(self) -> None:
         """Ensures the model base directory exists and has appropriate permissions."""
