@@ -3,7 +3,7 @@
 import os
 import platform
 from pathlib import Path
-from common import (
+from whl_deploy.common import (
     get_os_info,
     execute_command,
     CommandExecutionError,
@@ -40,9 +40,7 @@ class DockerManager:
     def _check_pre_conditions(self) -> None:
         """Checks pre-conditions necessary for Docker installation/uninstallation."""
         info("Checking pre-conditions...")
-        if os.geteuid() != 0:
-            raise PermissionError(
-                "This script must be run with root privileges (sudo).")
+
         if self.os_info.get('id') != "ubuntu":
             raise RuntimeError(
                 f"Unsupported OS: {self.os_info.get('id')}. This script is for Ubuntu.")
@@ -54,7 +52,7 @@ class DockerManager:
         try:
             # Docker commands can often be run by users in the 'docker' group without sudo
             execute_command(["docker", "info"],
-                            use_sudo=False, capture_output=True)
+                            use_sudo=False, check=True, capture_output=True)
             info("Docker daemon is responsive. Installation will be skipped.")
             return True
         except CommandExecutionError:
@@ -90,7 +88,7 @@ class DockerManager:
         )
         execute_command(
             ["gpg", "--dearmor", "-o", str(DOCKER_GPG_KEY_PATH)],
-            input_data=curl_result.stdout, check=True
+            use_sudo=True, input_data=curl_result.stdout.decode('utf-8'), check=True
         )
         execute_command(["chmod", "a+r", str(DOCKER_GPG_KEY_PATH)], check=True)
         info(f"Docker GPG key added to {DOCKER_GPG_KEY_PATH}.")
@@ -98,10 +96,12 @@ class DockerManager:
         info("Setting up Docker stable repository...")
         repo_line = (
             f"deb [arch={self.arch_alias} signed-by={DOCKER_GPG_KEY_PATH}] "
-            f"{repo_base_url} {self.os_info['codename']} stable"
+            f"{repo_base_url} {self.os_info['codename']} stable\n"
         )
-        with open(DOCKER_REPO_LIST_PATH, 'w') as f:
-            f.write(repo_line + '\n')
+        execute_command(
+            command=["tee", str(DOCKER_REPO_LIST_PATH)],
+            use_sudo=True, check=True, capture_output=True, input_data=repo_line
+        )
         info(f"Docker repository configured at {DOCKER_REPO_LIST_PATH}.")
 
         info("Updating apt package list with new repository...")
@@ -111,29 +111,30 @@ class DockerManager:
         info("Installing Docker Engine, CLI, and plugins...")
         execute_command([
             "apt-get", "install", "-y", "docker-ce", "docker-ce-cli",
-            "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"
+            "docker-buildx-plugin", "docker-compose-plugin",
+            "docker-ce-rootless-extras", "containerd.io"
         ], capture_output=False, check=True)
         info("Docker components installed successfully.")
 
     def _post_install_settings(self) -> None:
         """Applies post-installation settings for Docker."""
         info("Applying post-installation settings...")
-        current_user = os.getenv('SUDO_USER')
+        current_user = os.getlogin()
         if current_user:
             info(f"Adding user '{current_user}' to 'docker' group...")
             execute_command(["usermod", "-aG", "docker",
-                            current_user], check=True)
+                            current_user], use_sudo=True, check=True)
             info(
                 f"User '{current_user}' added. Log out and log back in for changes to take effect.")
         else:
             warning(
-                "SUDO_USER environment variable not set. Cannot automatically add user to 'docker' group.")
+                f"Cannot automatically add user '{current_user}' to 'docker' group.")
             warning(
-                "To use Docker without 'sudo', add your user manually: sudo usermod -aG docker YOUR_USERNAME")
+                f"To use Docker without 'sudo', add your user manually: sudo usermod -aG docker {current_user}")
 
         info("Starting and enabling Docker service...")
         execute_command(["systemctl", "enable", "--now", "docker"],
-                        capture_output=False, check=True)
+                        capture_output=False, use_sudo=True, check=True)
         info("Docker service started and enabled.")
 
     def install(self) -> int:
@@ -141,11 +142,9 @@ class DockerManager:
         info("===== Starting Docker Installation =====")
         try:
             self._check_pre_conditions()
-            if self._is_docker_already_functional():
-                return 0
-
-            self._install_prereq_packages()
-            self._setup_docker_repo_and_install()
+            if not self._is_docker_already_functional():
+                self._install_prereq_packages()
+                self._setup_docker_repo_and_install()
             self._post_install_settings()
 
             info("===== Docker Installation Completed Successfully! =====")

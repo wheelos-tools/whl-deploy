@@ -2,7 +2,8 @@ import logging
 import os
 import subprocess
 import sys
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
+from pathlib import Path
 
 # --- Setup Logging ---
 # Configure logging to output to stderr with color
@@ -55,6 +56,7 @@ class CommandExecutionError(Exception):
         self.stdout = stdout
         self.stderr = stderr
 
+
 class ManagerError(Exception):
     """Custom exception for errors during orchestration processes."""
     pass
@@ -67,7 +69,7 @@ def execute_command(
     check: bool = True,
     capture_output: bool = True,
     text: bool = True,
-    use_sudo: bool = True,
+    use_sudo: bool = False,
     input_data: Optional[bytes] = None
 ) -> subprocess.CompletedProcess:
     """
@@ -90,7 +92,7 @@ def execute_command(
     """
     cmd_to_execute = list(command)  # Create a mutable copy
 
-    if use_sudo and os.geteuid() != 0:
+    if use_sudo:
         cmd_to_execute.insert(0, "sudo")
 
     info(f"Executing: {' '.join(cmd_to_execute)}")
@@ -104,9 +106,9 @@ def execute_command(
             check=False  # We handle checking explicitly
         )
 
-        if result.stdout and capture_output:
-            for line in result.stdout.splitlines():
-                info(f"STDOUT: {line.strip()}")
+        # if result.stdout and capture_output:
+        #     for line in result.stdout.splitlines():
+        #         info(f"STDOUT: {line.strip()}")
         if result.stderr and capture_output:
             for line in result.stderr.splitlines():
                 info(f"STDERR: {line.strip()}")
@@ -138,7 +140,8 @@ def execute_docker_command(
     """
     Wrapper for executing Docker commands. Automatically prepends 'sudo docker'.
     """
-    full_command = ["sudo", "docker"] + command_args
+    full_command = ["docker"] + command_args
+    print(full_command)
     return execute_command(full_command, capture_output, text, check, **kwargs)
 
 
@@ -175,3 +178,79 @@ def get_os_info() -> Dict[str, str]:
             raise RuntimeError(
                 "Could not determine OS distribution. Neither lsb_release nor /etc/os-release found.")
     return os_info
+
+
+def ensure_dir(t_dir: Union[str, Path]) -> None:
+    resolved_path = Path(t_dir).resolve()
+
+    info(
+        f"Ensuring cache directory '{resolved_path}' exists and has correct permissions...")
+
+    # 1. Check if the directory already exists
+    directory_already_exists = False
+    try:
+        # 'test -d' checks if path exists and is a directory.
+        # It typically doesn't require sudo unless parent directories are inaccessible.
+        execute_command(["test", "-d", str(resolved_path)],
+                        check=True, capture_output=True)
+        # If 'test -d' succeeds (return code 0), the directory exists
+        directory_already_exists = True
+        info(f"Directory '{resolved_path}' already exists.")
+    except CommandExecutionError:
+        # 'test -d' failed, meaning the directory does not exist or is not a directory
+        info(
+            f"Directory '{resolved_path}' does not exist or is not a directory.")
+        # Explicitly set to false in case of previous partial success
+        directory_already_exists = False
+
+    # 2. Create the directory if it doesn't exist
+    if not directory_already_exists:
+        try:
+            info(f"Creating cache directory '{resolved_path}'...")
+            # 'mkdir -p' creates parent directories as needed and does not error if dir exists.
+            execute_command(
+                ["mkdir", "-p", str(resolved_path)], use_sudo=True)
+            info(
+                f"Cache directory '{resolved_path}' created successfully.")
+        except CommandExecutionError as e:
+            # Catch the specific command execution error
+            error(
+                f"Failed to create cache directory '{resolved_path}': {e}.")
+            raise CommandExecutionError(
+                f"Failed to create cache directory '{resolved_path}': {e}. "
+                "Please check permissions for path or parent directories."
+            )
+        except Exception as e:
+            # Catch any other unexpected errors during directory creation
+            critical(
+                f"An unexpected error occurred while creating directory '{resolved_path}': {e}", exc_info=True)
+            raise
+
+    # 3. Set permissions for the directory
+    # Use 0o775 (rwxrwxr-x): read/write/execute for owner and group, read/execute for others.
+    # This is suitable for shared directories where different users (e.g., build system users)
+    # might need access.
+    permission_mode = "0775"
+    local_user = os.getenv("USER")
+    try:
+        info(
+            f"Setting permissions {permission_mode} for '{resolved_path}'...")
+        # 'chmod' may require sudo if the directory is owned by root or another user.
+        execute_command(["chmod", permission_mode, str(
+            resolved_path)], use_sudo=True)
+        execute_command(["chown", f"{local_user}:{local_user}", str(
+            resolved_path)], use_sudo=True)
+        info(
+            f"Cache directory '{resolved_path}' is prepared with permissions {permission_mode}.")
+    except CommandExecutionError as e:
+        # Catch the specific command execution error
+        error(f"Failed to set permissions for '{resolved_path}': {e}.")
+        raise CommandExecutionError(
+            f"Failed to set permissions for '{resolved_path}': {e}. "
+            "Please ensure the user running this script has appropriate privileges (e.g., sudo)."
+        )
+    except Exception as e:
+        # Catch any other unexpected errors during permission setting
+        critical(
+            f"An unexpected error occurred while setting permissions for '{resolved_path}': {e}", exc_info=True)
+        raise

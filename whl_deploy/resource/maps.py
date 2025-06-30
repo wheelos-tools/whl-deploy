@@ -14,9 +14,9 @@ from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
 
 
 # --- Configuration Constants ---
-DEFAULT_MAP_BASE_DIR = Path("/opt/apollo/data/maps")
+DEFAULT_MAP_IMPORT_DIR = Path("modules/map/data")
 # Still recommend .tar.gz as default
-DEFAULT_EXPORT_FILENAME = "map_data.tar.gz"
+DEFAULT_MAP_EXPORT_FILENAME = "map_data.tar.gz"
 
 # --- Custom Exception for Map Operations ---
 
@@ -29,7 +29,7 @@ class MapManagerError(Exception):
 
 
 class MapManager:
-    def __init__(self, base_dir: Union[str, Path] = DEFAULT_MAP_BASE_DIR):
+    def __init__(self, base_dir: Union[str, Path] = DEFAULT_MAP_IMPORT_DIR):
         self.map_base_dir = Path(base_dir).resolve()
         self.file_fetcher = FileLoader()
         self.archive_manager = ArchiveManager()
@@ -38,23 +38,17 @@ class MapManager:
 
     def _check_permissions(self) -> None:
         """Checks if the script has necessary permissions for map operations."""
-        if os.geteuid() != 0:
-            warning(
-                "It is highly recommended to run this script with root (sudo) privileges, "
-                f"especially for operations on '{self.map_base_dir}'.")
 
-            # Check write access to the base directory itself if it exists.
-            # If it doesn't exist, check parent for creation permission.
-            if self.map_base_dir.exists():
-                if not os.access(self.map_base_dir, os.W_OK):
-                    raise PermissionError(f"No write access to '{self.map_base_dir}'. "
-                                          "Please run with sudo.")
-            else:  # map_base_dir does not exist
-                if not os.access(self.map_base_dir.parent, os.W_OK):
-                    raise PermissionError(f"No write access to create '{self.map_base_dir}'. "
-                                          "Please run with sudo.")
-        else:
-            info("Running with root privileges.")
+        # Check write access to the base directory itself if it exists.
+        # If it doesn't exist, check parent for creation permission.
+        if self.map_base_dir.exists():
+            if not os.access(self.map_base_dir, os.W_OK):
+                raise PermissionError(f"No write access to '{self.map_base_dir}'. "
+                                        "Please run with sudo.")
+        else:  # map_base_dir does not exist
+            if not os.access(self.map_base_dir.parent, os.W_OK):
+                raise PermissionError(f"No write access to create '{self.map_base_dir}'. "
+                                        "Please run with sudo.")
 
     def _ensure_base_dir_exists(self) -> None:
         """Ensures the map base directory exists and has appropriate permissions."""
@@ -175,7 +169,7 @@ class MapManager:
                     critical(
                         f"Failed to clean up partially imported map '{target_map_dir}': {e}")
 
-    def export_map(self, map_name: str, output_filename: Union[str, Path] = DEFAULT_EXPORT_FILENAME) -> None:
+    def export_map(self, map_name: str, output_filename: Union[str, Path] = DEFAULT_MAP_EXPORT_FILENAME) -> None:
         """
         Exports a specific map directory to a compressed archive.
 

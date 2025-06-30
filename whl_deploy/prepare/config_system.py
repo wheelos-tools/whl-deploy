@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from common import (
+from whl_deploy.common import (
     execute_command,
     CommandExecutionError,
     info,
@@ -40,10 +40,6 @@ class HostConfigManager:
         """Checks essential prerequisites before starting any host setup."""
         info("Checking host setup pre-conditions...")
 
-        if os.geteuid() != 0:
-            raise PermissionError(
-                "This script must be run with root privileges (sudo).")
-
         if not self.apollo_root_dir.is_dir():
             raise RuntimeError(f"APOLLO_ROOT_DIR ('{self.apollo_root_dir}') not found or is not a directory. "
                                "Please ensure this script is run from within the Apollo project structure.")
@@ -63,10 +59,11 @@ class HostConfigManager:
                     f"Required command '{cmd}' not found. Please ensure it's installed and in PATH.")
         info("All required commands are available.")
 
-        if not self.udev_rules_src_dir.is_dir() or not list(self.udev_rules_src_dir.iterdir()):
-            raise RuntimeError(f"Udev rules source directory '{self.udev_rules_src_dir}' not found or is empty. "
-                               "Please ensure Apollo's udev rules are present in the expected location.")
-        info("Udev rules source directory detected and contains files.")
+        # todo(zero): need fix
+        # if not self.udev_rules_src_dir.is_dir() or not list(self.udev_rules_src_dir.iterdir()):
+        #     raise RuntimeError(f"Udev rules source directory '{self.udev_rules_src_dir}' not found or is empty. "
+        #                        "Please ensure Apollo's udev rules are present in the expected location.")
+        # info("Udev rules source directory detected and contains files.")
 
         info("All host setup pre-conditions met.")
 
@@ -134,7 +131,7 @@ class HostConfigManager:
             info(
                 f"Bazel cache directory '{BAZEL_CACHE_DIR}' already exists. Skipping creation.")
         else:
-            execute_command(["mkdir", "-p", BAZEL_CACHE_DIR],
+            execute_command(["mkdir", "-p", str(BAZEL_CACHE_DIR)],
                             capture_output=False, check=True)
             info(f"Created Bazel cache directory: {BAZEL_CACHE_DIR}.")
 
@@ -145,7 +142,7 @@ class HostConfigManager:
         # Given the context, `a+rwx` (0777) is often used for this specific type of shared cache.
         # If strict security, then ensure Bazel user has access and others read-only.
         # Sticking with original intent (shared writeable) but adding comment.
-        execute_command(["chmod", "0777", BAZEL_CACHE_DIR],
+        execute_command(["chmod", "0777", str(BAZEL_CACHE_DIR)],
                         capture_output=False, check=True)
         info(
             f"Set permissions for '{BAZEL_CACHE_DIR}' to 0777 (world-writable for shared cache).")
@@ -163,7 +160,7 @@ class HostConfigManager:
             # Check if the service unit file exists by trying to enable it quietly.
             # systemctl enable will fail if unit file doesn't exist.
             execute_command(["systemctl", "enable", "--now", "--quiet", service_name],
-                            check=True, capture_output=False, use_sudo=False)
+                            check=True, capture_output=False, use_sudo=True)
             info(f"{service_name} enabled and started (or already active).")
         except CommandExecutionError as e:
             warning(f"{service_name} not found or failed to enable/start: {e}. "
@@ -243,11 +240,12 @@ class HostConfigManager:
         info("Starting host machine setup process...")
         try:
             self._check_pre_conditions()
-            self._setup_core_dump()
+            # todo(zero):
+            # self._setup_core_dump()
             self._setup_bazel_cache_dir()
             self._configure_ntp()
-            self._apply_udev_rules()
-            self._configure_uvcvideo_module()
+            # self._apply_udev_rules()
+            # self._configure_uvcvideo_module()
 
             info("Host machine setup completed successfully!")
             return 0

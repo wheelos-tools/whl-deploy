@@ -1,3 +1,4 @@
+import os
 import tarfile
 import zipfile
 from pathlib import Path
@@ -20,7 +21,11 @@ class ArchiveManager:
     def __init__(self):
         pass
 
-    def decompress(self, archive_path: Path, destination_path: Path, force_filter: Optional[str] = 'data') -> None:
+    def decompress(self,
+                   archive_path: Path,
+                   destination_path: Path,
+                   force_filter: Optional[str] = 'data',
+                   target_top_level_dir_name: Optional[str] = None) -> None:
         """
         Decompresses an archive to a specified destination directory.
         Supports .tar.gz and .zip files.
@@ -30,59 +35,134 @@ class ArchiveManager:
             destination_path: Path to the directory where contents will be extracted.
             force_filter: Optional filter to apply during extraction for tar archives (e.g., 'data' for security).
                           Defaults to 'data' for tar archives (Python 3.8+). Not applicable for zip.
+            target_top_level_dir_name: Optional new name for the *single* top-level directory found
+                                       after decompression. If specified, the manager will attempt to
+                                       identify a single top-level directory and rename it.
+                                       If multiple top-level items or no single top-level directory are found,
+                                       an ArchiveManagerError will be raised.
         Raises:
-            ArchiveManagerError: If the archive is not valid or extraction fails.
+            ArchiveManagerError: If the archive is not valid, extraction fails, or automatic
+                                 top-level directory renaming is not possible.
         """
         info(f"Decompressing '{archive_path}' to '{destination_path}'...")
         if not archive_path.is_file():
             raise ArchiveManagerError(
                 f"Archive file not found: {archive_path}")
 
+        # Ensure destination_path exists *before* extraction
         destination_path.mkdir(parents=True, exist_ok=True)
 
+        # Record initial contents of destination_path (if any), to help identify newly extracted top-level dir.
+        # This is a robust way to find what was newly added.
+        initial_contents_names = set(
+            p.name for p in destination_path.iterdir())
+
         if tarfile.is_tarfile(archive_path):
-            try:
-                # Use r:* to auto-detect compression
-                with tarfile.open(archive_path, "r:*") as tar:
-                    # Check if filter feature exists (Python 3.8+)
-                    if force_filter and hasattr(tarfile, 'data_filter'):
-                        tar.extractall(path=destination_path,
-                                       filter=force_filter)
-                    elif force_filter:
-                        warning(f"Python version does not support tarfile filter='{force_filter}'. "
-                                "Proceeding without filter. Consider upgrading Python for security.")
-                        tar.extractall(path=destination_path)
-                    else:
-                        tar.extractall(path=destination_path)
-            except tarfile.ReadError as e:
-                raise ArchiveManagerError(
-                    f"Failed to read tar archive '{archive_path}': {e}. "
-                    "Is it corrupted or not a recognized tar compression?"
-                )
+            self._decompress_tar(archive_path, destination_path, force_filter)
         elif zipfile.is_zipfile(archive_path):
-            try:
-                with zipfile.ZipFile(archive_path, 'r') as zf:
-                    # Manual path traversal check for zipfile as it lacks filter parameter in older Python versions
-                    # This check makes the zip extraction safer.
-                    for member in zf.infolist():
-                        # Path.parts handles path components robustly
-                        normalized_parts = Path(member.filename).parts
-                        if any(part == '..' for part in normalized_parts) or Path(member.filename).is_absolute():
-                            warning(
-                                f"Skipping potentially malicious path in zip archive: {member.filename}")
-                            continue
-                        # Use extract rather than extractall for member-by-member control
-                        # member.filename might contain internal directories which extract handles
-                        zf.extract(member, path=destination_path)
-            except zipfile.BadZipFile as e:
-                raise ArchiveManagerError(
-                    f"Failed to read zip archive '{archive_path}': {e}. Is it corrupted?")
+            self._decompress_zip(archive_path, destination_path)
         else:
             raise ArchiveManagerError(
                 f"'{archive_path.name}' is not a recognized archive format (.tar, .tar.gz, .zip, etc.)."
             )
 
+        # Apply top-level directory renaming after successful decompression
+        if target_top_level_dir_name:
+            info(
+                f"Attempting to rename top-level directory to '{target_top_level_dir_name}'...")
+
+            # Identify the newly extracted top-level items
+            extracted_top_level_items = [
+                p for p in destination_path.iterdir() if p.name not in initial_contents_names]
+
+            if not extracted_top_level_items:
+                raise ArchiveManagerError(
+                    f"No new content was extracted to '{destination_path}'. "
+                    "Cannot perform top-level directory rename."
+                )
+
+            # Filter for directories among the newly extracted items
+            extracted_top_level_dirs = [
+                p for p in extracted_top_level_items if p.is_dir()]
+
+            if len(extracted_top_level_dirs) == 1:
+                source_path = extracted_top_level_dirs[0]
+                old_name = source_path.name
+                target_path = destination_path / target_top_level_dir_name
+
+                # Check if the target_path already exists and is not the source_path
+                if target_path.exists() and target_path != source_path:
+                    raise ArchiveManagerError(
+                        f"Target path '{target_path}' already exists and is different from source path '{source_path}'. "
+                        "Cannot rename to an existing path."
+                    )
+
+                try:
+                    info(
+                        f"Renaming detected top-level directory '{old_name}' to '{target_top_level_dir_name}'...")
+                    source_path.rename(target_path)
+                    info("Top-level directory renaming completed successfully.")
+                except OSError as e:
+                    error(
+                        f"Failed to rename '{source_path}' to '{target_path}': {e}")
+                    raise ArchiveManagerError(
+                        f"Failed to rename top-level directory: {e}")
+            elif len(extracted_top_level_dirs) > 1:
+                # This means the archive extracted multiple directories at the top level
+                raise ArchiveManagerError(
+                    f"Multiple top-level directories detected in '{destination_path}' after extraction: "
+                    f"{[p.name for p in extracted_top_level_dirs]}. "
+                    "Automatic single top-level directory renaming is not possible."
+                )
+            else:  # No directories, only files, or no new content that is a directory
+                # Check if there are any new files at top level
+                extracted_top_level_files = [
+                    p for p in extracted_top_level_items if p.is_file()]
+                if extracted_top_level_files:
+                    raise ArchiveManagerError(
+                        f"Archive extracted files directly to '{destination_path}' (e.g., {extracted_top_level_files[0].name}). "
+                        "No single top-level directory was found to rename."
+                    )
+                else:  # Should not happen if extracted_top_level_items is not empty, but good for completeness
+                    raise ArchiveManagerError(
+                        f"Unexpected content structure in '{destination_path}'. "
+                        "No single top-level directory was found to rename."
+                    )
+
         info("Decompression completed successfully!")
+
+    def _decompress_tar(self, archive_path: Path, destination_path: Path, force_filter: Optional[str]) -> None:
+        """Internal helper for decompressing tar archives."""
+        try:
+            with tarfile.open(archive_path, "r:*") as tar:
+                if force_filter and hasattr(tarfile, 'data_filter'):
+                    tar.extractall(path=destination_path, filter=force_filter)
+                elif force_filter:
+                    warning(f"Python version does not support tarfile filter='{force_filter}'. "
+                            "Proceeding without filter. Consider upgrading Python for security.")
+                    tar.extractall(path=destination_path)
+                else:
+                    tar.extractall(path=destination_path)
+        except tarfile.ReadError as e:
+            raise ArchiveManagerError(
+                f"Failed to read tar archive '{archive_path}': {e}. "
+                "Is it corrupted or not a recognized tar compression?"
+            )
+
+    def _decompress_zip(self, archive_path: Path, destination_path: Path) -> None:
+        """Internal helper for decompressing zip archives."""
+        try:
+            with zipfile.ZipFile(archive_path, 'r') as zf:
+                for member in zf.infolist():
+                    member_path = Path(member.filename)
+                    if member_path.is_absolute() or any('..' == part for part in member_path.parts):
+                        warning(
+                            f"Skipping potentially malicious path in zip archive: {member.filename}")
+                        continue
+                    zf.extract(member, path=destination_path)
+        except zipfile.BadZipFile as e:
+            raise ArchiveManagerError(
+                f"Failed to read zip archive '{archive_path}': {e}. Is it corrupted?")
 
     def compress(self, source_path: Path, output_path: Path, arcname_in_archive: Optional[str] = None) -> None:
         """

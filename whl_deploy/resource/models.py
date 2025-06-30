@@ -15,8 +15,8 @@ from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
 
 
 # --- Configuration Constants ---
-DEFAULT_MODEL_BASE_DIR = Path("/opt/apollo/data/models")
-DEFAULT_EXPORT_FILENAME = "model_data.tar.gz"
+DEFAULT_MODEL_IMPORT_DIR = Path("modules/perception/production/data/perception")
+DEFAULT_MODEL_EXPORT_FILENAME = "model_data.tar.gz"
 
 # --- Custom Exception for Model Operations ---
 
@@ -29,7 +29,7 @@ class ModelManagerError(Exception):
 
 
 class ModelManager:
-    def __init__(self, base_dir: Union[str, Path] = DEFAULT_MODEL_BASE_DIR):
+    def __init__(self, base_dir: Union[str, Path] = DEFAULT_MODEL_IMPORT_DIR):
         self.model_base_dir = Path(base_dir).resolve()
         self.file_fetcher = FileLoader()
         self.archive_manager = ArchiveManager()
@@ -38,21 +38,15 @@ class ModelManager:
 
     def _check_permissions(self) -> None:
         """Checks if the script has necessary permissions for model operations."""
-        if os.geteuid() != 0:
-            warning(
-                "It is highly recommended to run this script with root (sudo) privileges, "
-                f"especially for operations on '{self.model_base_dir}'.")
 
-            if self.model_base_dir.exists():
-                if not os.access(self.model_base_dir, os.W_OK):
-                    raise PermissionError(f"No write access to '{self.model_base_dir}'. "
-                                          "Please run with sudo.")
-            else:  # model_base_dir does not exist
-                if not os.access(self.model_base_dir.parent, os.W_OK):
-                    raise PermissionError(f"No write access to create '{self.model_base_dir}'. "
-                                          "Please run with sudo.")
-        else:
-            info("Running with root privileges.")
+        if self.model_base_dir.exists():
+            if not os.access(self.model_base_dir, os.W_OK):
+                raise PermissionError(f"No write access to '{self.model_base_dir}'. "
+                                        "Please run with sudo.")
+        else:  # model_base_dir does not exist
+            if not os.access(self.model_base_dir.parent, os.W_OK):
+                raise PermissionError(f"No write access to create '{self.model_base_dir}'. "
+                                        "Please run with sudo.")
 
     def _ensure_base_dir_exists(self) -> None:
         """Ensures the model base directory exists and has appropriate permissions."""
@@ -162,7 +156,7 @@ class ModelManager:
                     critical(
                         f"Failed to clean up partially imported model '{target_model_dir}': {e}")
 
-    def export_model(self, model_name: str, output_filename: Union[str, Path] = DEFAULT_EXPORT_FILENAME) -> None:
+    def export_model(self, model_name: str, output_filename: Union[str, Path] = DEFAULT_MODEL_EXPORT_FILENAME) -> None:
         """
         Exports a specific model directory to a .tar.gz archive.
 

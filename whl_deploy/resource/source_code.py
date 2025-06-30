@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import os
 import sys
 import shutil
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import Optional, Union
 
 from whl_deploy.common import (
     info, warning, error, critical
 )
+from whl_deploy.common import ensure_dir
 from whl_deploy.file_loader import FileLoader, FileFetcherError
 from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
 
@@ -19,200 +19,229 @@ class SourcePackageManagerError(Exception):
 
 
 # --- Configuration Constants ---
-# Base directory for all source related data
-SOURCE_BASE_DIR = Path("/opt/apollo")  # Use Path
-# The specific directory where the *active* source code will be stored
-DEFAULT_ACTIVE_SOURCE_DIR = Path("/opt/apollo")  # Use Path
+# Default directory where source code will be "active" or assumed to be for operations.
+DEFAULT_SOURCE_DIR = Path("apollo")
 
 # Default filename for exported source packages
-DEFAULT_EXPORT_FILENAME = "apollo_source_code.tar.gz"
+DEFAULT_SOURCE_EXPORT_FILENAME = "source_code.tar.gz"
 
 # --- SourcePackageManager Implementation ---
 
 
 class SourcePackageManager:
     """
-    Manages the import and export of a single active autonomous driving source code package.
+    Manages the import, export, and clearing of source code packages.
+    The 'DEFAULT_SOURCE_DIR' represents a default location for source code operations
+    (e.g., as a default source for export/clear, or a default target for import).
+    Import operations can explicitly target any location.
     """
 
-    def __init__(self):
-        # Convert to pathlib.Path objects and resolve to absolute paths
-        self.source_base_dir = SOURCE_BASE_DIR.resolve()
-        self.active_source_dir = DEFAULT_ACTIVE_SOURCE_DIR.resolve()
+    def __init__(self, source_code_dir: Optional[Path] = None):
+        """
+        Initializes the SourcePackageManager.
 
-        # Pass the logger instance to FileLoader for consistent logging
-        # Assuming common.info, etc. use a global logger,
-        # or FileLoader itself handles its logging.
-        # If common.py uses a shared logger, no need to pass an instance here unless specific.
-        # Removed logger_instance=logger, assuming FileLoader logs directly or uses common's logger.
+        Args:
+            default_managed_dir: Optional. The default directory this manager considers
+                                 the "active" or "managed" source code location.
+                                 If None, DEFAULT_SOURCE_DIR is used.
+        """
+        # This will be the default directory for operations like `clear`
+        # and `export` if no specific path is provided.
+        self.source_code_dir: Path = source_code_dir if source_code_dir else DEFAULT_SOURCE_DIR
+
         self.file_fetcher = FileLoader()
-        self.archive_manager = ArchiveManager()  # Initialize ArchiveManager
+        self.archive_manager = ArchiveManager()
 
         info(
-            f"Initialized SourcePackageManager. Active source will be managed in: {self.active_source_dir}")
+            f"Initialized SourcePackageManager. Default managed source directory: {self.source_code_dir}")
 
-    def _check_root_permissions(self) -> None:
+    def _prepare_target_directory(self, target_dir: Path, force_overwrite: bool) -> None:
         """
-        Checks if the script has necessary root privileges for critical operations.
-        Raises PermissionError if write access is denied for crucial directories.
-        """
-        if os.geteuid() != 0:
-            warning("It is highly recommended to run this script with root (sudo) privileges "
-                    f"for operations on '{self.source_base_dir}'.")
-            # Check write access to the parent directory of SOURCE_BASE_DIR
-            # This ensures that even if /opt/apollo doesn't exist, we can create it.
-            # Use Path.parent for parent directory.
-            base_dir_parent = self.source_base_dir.parent
-            if not os.access(base_dir_parent, os.W_OK):
-                raise PermissionError(f"No write access to '{base_dir_parent}'. "
-                                      "Please run with sudo to create/manage source directories.")
-        else:
-            info("Running with root privileges.")
+        Prepares the target directory for new content.
+        Cleans existing content or raises an error if force_overwrite is False.
 
-    def _ensure_source_base_dir(self) -> None:
-        """Ensures the source base directory (/opt/apollo) exists and has correct permissions."""
-        try:
-            # Use Path.mkdir for creating directory, with exist_ok=True and mode.
-            self.source_base_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
+        Args:
+            target_dir: The pathlib.Path object for the target directory.
+            force_overwrite: If True, overwrite existing content without asking.
+                             If False, raises SourcePackageManagerError if target_dir is not empty.
+        Raises:
+            SourcePackageManagerError: If target_dir is not empty and force_overwrite is False.
+        """
+        if not target_dir.exists():
             info(
-                f"Ensured source base directory exists: {self.source_base_dir}")
-        except OSError as e:
-            raise SourcePackageManagerError(
-                f"Failed to create source base directory '{self.source_base_dir}': {e}")
-        try:
-            # Ensure permissions are correct even if it already exists
-            # Use Path.chmod for setting permissions
-            self.source_base_dir.chmod(0o755)
-        except OSError as e:
-            raise SourcePackageManagerError(
-                f"Failed to set permissions for '{self.source_base_dir}': {e}")
+                f"Target directory '{target_dir}' does not exist. Skipping preparation.")
+            return  # Directory does not exist, do nothing as requested.
 
-    def _prepare_active_source_directory(self, force_overwrite: bool) -> None:
-        """
-        Prepares the active source directory for new content.
-        Cleans existing content or prompts for overwrite.
-        """
-        dir_exists = self.active_source_dir.is_dir()  # Use Path.is_dir()
-        dir_not_empty = dir_exists and bool(
-            list(self.active_source_dir.iterdir()))  # Use Path.iterdir()
+        # If we reach here, target_dir exists. Now check its content.
+        dir_not_empty = any(target_dir.iterdir())
 
         if dir_not_empty:
             if not force_overwrite:
-                warning(
-                    f"Existing source code found in '{self.active_source_dir}'.")
-                if not sys.stdin.isatty():
-                    raise SourcePackageManagerError(
-                        "Existing source code found and running in non-interactive mode. "
-                        "Use --force to overwrite or cancel manually."
-                    )
-                user_input = input(
-                    "This operation will delete all existing contents. Continue? (y/N): ").strip().lower()
-                if user_input != 'y':
-                    info("Operation cancelled by user.")
-                    raise SourcePackageManagerError(
-                        "Import operation cancelled by user.")
-            else:
-                info("Force overwrite enabled. Proceeding to delete existing source code.")
-        elif dir_exists and not dir_not_empty:  # Directory exists but is empty
-            info(
-                f"Active source directory '{self.active_source_dir}' exists but is empty. Proceeding with import.")
-        else:  # Directory does not exist
-            info(
-                f"Active source directory '{self.active_source_dir}' does not exist. It will be created.")
+                raise SourcePackageManagerError(
+                    f"Target directory '{target_dir}' is not empty. "
+                    "Cannot proceed without force_overwrite=True. "
+                    "Please clear it manually or set force_overwrite to True."
+                )
 
-        # Clean up or create the directory
-        if self.active_source_dir.exists():  # Use Path.exists()
+            info(
+                f"Force overwrite enabled. Cleaning up existing content in directory: {target_dir}")
             try:
-                shutil.rmtree(self.active_source_dir)
-                info(
-                    f"Successfully deleted old source code from '{self.active_source_dir}'.")
+                shutil.rmtree(target_dir)
+                info(f"Successfully cleaned old content from '{target_dir}'.")
             except OSError as e:
                 raise SourcePackageManagerError(
-                    f"Failed to clean up existing source code in '{self.active_source_dir}': {e}")
+                    f"Failed to clean up existing content in '{target_dir}': {e}. "
+                    "Please check permissions or if the directory is in use."
+                )
+        else:
+            info(f"Target directory '{target_dir}' is empty. Proceeding.")
 
-        try:
-            # Use Path.mkdir for creating directory, with exist_ok=True and mode.
-            self.active_source_dir.mkdir(
-                mode=0o755, parents=True, exist_ok=True)
-            info(
-                f"Prepared active source directory: '{self.active_source_dir}'.")
-        except OSError as e:
-            raise SourcePackageManagerError(
-                f"Failed to create/prepare active source directory '{self.active_source_dir}': {e}")
-
-    def import_source_package(self, source_path: str, force_overwrite: bool = False) -> None:
+    def import_source_package(self, input_path: Union[str, Path], output_path: Union[str, Path] = ".", force_overwrite: bool = True) -> None:
         """
         Imports source code from a .tar.gz archive (local file or URL)
-        to the fixed active source directory (DEFAULT_ACTIVE_SOURCE_DIR).
-        This will overwrite any existing source code in that directory.
+        to a specified output directory.
 
         Args:
-            source_path: Path to the local .tar.gz archive file OR URL of the archive.
-            force_overwrite: If True, overwrite existing source code without asking.
+            input_path: Path to the local .tar.gz archive file OR URL of the archive.
+            output_path: The directory where the source code will be extracted.
+                         Defaults to current directory.
+            force_overwrite: If True, overwrite existing content in output_path without asking.
+                             If False and output_path is not empty, will raise an error.
         """
-        self._check_root_permissions()
-        self._ensure_source_base_dir()
+        target_directory = Path(output_path).resolve().parent
+
+        info(
+            f"Starting import of source package from '{input_path}' to '{target_directory}'...")
 
         try:
-            self._prepare_active_source_directory(force_overwrite)
+            self._prepare_target_directory(output_path, force_overwrite)
         except SourcePackageManagerError as e:
-            # If user cancels, _prepare_active_source_directory raises this error
-            error(f"Import preparation failed: {e}")
-            return  # Exit gracefully if cancelled
+            error(f"Source package import preparation failed: {e}")
+            raise  # Re-raise to signal a failure to the caller
 
-        local_archive_path: Optional[Path] = None  # Use Path
+        local_archive_path: Optional[Path] = None
         try:
-            # FileLoader should handle its own temporary directories.
-            # No need to pass destination_dir=os.getcwd().
-            local_archive_path = Path(self.file_fetcher.fetch(source_path))
+            # Fetch the archive, which might download it to a temp location
+            local_archive_path = Path(self.file_fetcher.fetch(str(input_path)))
 
             info(
-                f"Extracting source code archive '{local_archive_path}' to '{self.active_source_dir}'...")
+                f"Extracting source code archive '{local_archive_path}' to '{target_directory}'...")
 
             self.archive_manager.decompress(
-                local_archive_path, self.active_source_dir)
+                local_archive_path, target_directory, target_top_level_dir_name=DEFAULT_SOURCE_DIR.name)
 
-            info(
-                f"Source code imported successfully to '{self.active_source_dir}'!")
+            info(f"Source code imported successfully to '{target_directory}'!")
 
         except FileFetcherError as e:
             raise SourcePackageManagerError(
-                f"Failed to fetch source code archive: {e}")
-        except ArchiveManagerError as e:  # Catch the specific exception from ArchiveManager
+                f"Failed to fetch source code archive from '{input_path}': {e}")
+        except ArchiveManagerError as e:
             raise SourcePackageManagerError(
-                f"Failed to extract source code archive '{local_archive_path}': {e}")
-        except Exception as e:
+                f"Failed to extract source code archive '{local_archive_path}' to '{target_directory}': {e}")
+        except OSError as e:  # Catch OS-level errors during file operations
+            raise SourcePackageManagerError(
+                f"File system error during import to '{target_directory}': {e}")
+        except Exception as e:  # Catch any other unexpected errors
             critical(
-                f"An unexpected error occurred during source code import: {e}")
-            raise  # Re-raise to be caught by main's error handler
+                f"An unexpected error occurred during source code import: {e}", exc_info=True)
+            raise SourcePackageManagerError(
+                f"An unexpected error occurred: {e}")
         finally:
-            self.file_fetcher.cleanup_temp_files()
+            # TODO(zero): Ensure temporary files from FileLoader are cleaned up
+            # self.file_fetcher.cleanup_temp_files()
+            pass
 
-    def export_source_package(self, output_filename: str = DEFAULT_EXPORT_FILENAME) -> None:
+    def export_source_package(self, input_path: Union[str, Path] = DEFAULT_SOURCE_DIR, output_path: Union[str, Path] = DEFAULT_SOURCE_EXPORT_FILENAME) -> None:
         """
-        Exports the currently active source code directory to a .tar.gz archive.
+        Exports a source code directory to a .tar.gz archive.
 
         Args:
-            output_filename: The name of the output .tar.gz file.
+            input_path: The directory containing the source code to be exported.
+                        Defaults to DEFAULT_SOURCE_DIR.
+            output_path: The full path and filename for the output .tar.gz file (e.g., "my_project.tar.gz").
+                         Defaults to DEFAULT_SOURCE_EXPORT_FILENAME.
         """
-        self._check_root_permissions()
+        source_directory = Path(input_path).resolve()
+        output_file_path = Path(output_path).resolve()
 
-        source_code_to_export = self.active_source_dir
+        info(
+            f"Preparing to export source code from '{source_directory}' to '{output_file_path}'.")
 
-        # Use Path.is_dir() and Path.iterdir()
-        if not source_code_to_export.is_dir() or not list(source_code_to_export.iterdir()):
-            raise SourcePackageManagerError(f"Active source code directory '{source_code_to_export}' "
-                                            "does not exist or is empty. Nothing to export.")
+        # Ensure the source directory for export exists and is accessible
+        ensure_dir(source_directory)
 
-        output_path = Path(output_filename).resolve()  # Use Path and resolve()
+        # Validate source directory
+        if not source_directory.is_dir():
+            raise SourcePackageManagerError(
+                f"Source directory '{source_directory}' does not exist or is not a directory. Nothing to export.")
+        if not any(source_directory.iterdir()):
+            warning(
+                f"Source directory '{source_directory}' is empty. Exporting an empty archive.")
+
+        # Ensure parent directory for output exists
+        ensure_dir(output_file_path.parent)
 
         try:
-            self.archive_manager.compress(source_code_to_export, output_path)
             info(
-                f"Active source code exported successfully to '{output_path}'!")
-        except ArchiveManagerError as e:  # Catch the specific exception from ArchiveManager
+                f"Compressing source code from '{source_directory}' to '{output_file_path}'...")
+            self.archive_manager.compress(
+                source_directory, output_file_path)
+            info(f"Source code exported successfully to '{output_file_path}'!")
+        except ArchiveManagerError as e:
             raise SourcePackageManagerError(
-                f"Failed to export active source code to '{output_path}': {e}")
+                f"Failed to export source code from '{source_directory}' to '{output_file_path}': {e}")
+        except OSError as e:  # Catch OS-level errors during file operations
+            raise SourcePackageManagerError(
+                f"File system error during export to '{output_file_path}': {e}")
+        except Exception as e:  # Catch any other unexpected errors
+            critical(
+                f"An unexpected error occurred during source code export: {e}", exc_info=True)
+            raise SourcePackageManagerError(
+                f"An unexpected error occurred: {e}")
+
+    def clear_source_package(self, force_clear: bool = False) -> None:
+        """
+        Clears the default managed source code directory (self.source_code_dir).
+
+        Args:
+            force_clear: If True, clear the directory without requiring confirmation.
+                         If False and the directory is not empty, will raise an error.
+        """
+        info(
+            f"Preparing to clear source package at '{self.source_code_dir}'.")
+
+        # Ensure the directory exists before trying to clear it
+        ensure_dir(self.source_code_dir)
+
+        if not any(self.source_code_dir.iterdir()):
+            info(
+                f"Source package directory '{self.source_code_dir}' is already empty. Nothing to clear.")
+            return
+
+        # If not empty and not forced, raise an error
+        if not force_clear:
+            raise SourcePackageManagerError(
+                f"Source package directory '{self.source_code_dir}' is not empty. "
+                "Cannot proceed without --force (or equivalent) to clear existing content. "
+                "Please run with --force."
+            )
+
+        try:
+            info(
+                f"Deleting all contents in '{self.source_code_dir}'...")
+            shutil.rmtree(self.source_code_dir)
+
+            # Re-create the directory after deletion to ensure it exists for future use
+            ensure_dir(self.source_code_dir)
+            info(
+                f"Source package at '{self.source_code_dir}' cleared successfully!")
+        except OSError as e:
+            raise SourcePackageManagerError(
+                f"Failed to clear source package directory '{self.source_code_dir}': {e}. "
+                "Please check permissions or if the directory is in use."
+            )
         except Exception as e:
+            critical(
+                f"An unexpected error occurred during source package clear: {e}", exc_info=True)
             raise SourcePackageManagerError(
-                f"An unexpected error occurred during source code export: {e}")
+                f"An unexpected error occurred during source package clear: {e}")

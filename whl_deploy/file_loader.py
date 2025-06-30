@@ -1,15 +1,18 @@
-import logging
+from tqdm import tqdm
 import shutil
 import urllib.request
 from urllib.error import URLError, HTTPError
 import subprocess
 import tempfile
-from typing import List, Optional
+from typing import List, Optional, Union
 from urllib.parse import urlparse
 from pathlib import Path
 
+from whl_deploy.common import info, error, warning, critical
 
 # --- Custom Exceptions ---
+
+
 class FileFetcherError(Exception):
     """Custom exception for errors during file fetching/cloning."""
     pass
@@ -20,8 +23,6 @@ class FileLoader:
         # Stores only temporary directories created by FileLoader.
         # Files downloaded into these directories will be cleaned up automatically.
         self.temp_dirs: List[Path] = []
-        self.logger = logger_instance if logger_instance else logging.getLogger(
-            __name__)
 
     def fetch(self, source_path: str, destination_dir: Optional[Union[str, Path]] = None) -> Path:
         """
@@ -51,22 +52,21 @@ class FileLoader:
             # Check for common Git hosting domains or typical Git URL patterns.
             # This is a best-effort check. A robust solution might involve `git ls-remote`.
             # For this context, it's acceptable.
-            if any(host in source_path for host in ["github.com", "gitlab.com", "bitbucket.org"]) or \
-               source_path.endswith(".git") or "/git/" in source_path:
-                self.logger.info(
+            if source_path.endswith(".git") or "/git/" in source_path:
+                info(
                     f"Attempting to clone HTTPS/HTTP Git repository: {source_path}")
                 return self._git_clone(source_path, destination_dir)
             else:
-                self.logger.info(f"Downloading file from URL: {source_path}")
+                info(f"Downloading file from URL: {source_path}")
                 return self._download_file(source_path, destination_dir)
         elif source_path.startswith('git@'):  # SSH Git protocol
-            self.logger.info(
+            info(
                 f"Attempting to clone SSH Git repository: {source_path}")
             return self._git_clone(source_path, destination_dir)
         else:  # Assume local file or directory
             # Resolve to absolute path
             local_path = Path(source_path).resolve()
-            self.logger.info(f"Using local path: {local_path}")
+            info(f"Using local path: {local_path}")
             if not local_path.exists():
                 raise FileFetcherError(f"Local path not found: {local_path}")
             return local_path
@@ -88,12 +88,27 @@ class FileLoader:
         suggested_filename = Path(parsed_url.path).name or "downloaded_file"
         local_filename = destination_dir / suggested_filename  # Use Path for concatenation
 
-        self.logger.info(
+        info(
             f"Attempting to download '{url}' to '{local_filename}'...")
         try:
-            with urllib.request.urlopen(url) as response, open(local_filename, 'wb') as out_file:
-                shutil.copyfileobj(response, out_file)
-            return local_filename
+            with urllib.request.urlopen(url) as response:
+                # Get the total file size, if available (from Content-Length header)
+                total_size = response.length
+                block_size = 8192  # 8 KB chunks
+                # Create a progress bar using tqdm
+                # If total_size is available, tqdm will show a percentage and ETA.
+                # If total_size is not available (e.g., some servers don't provide Content-Length),
+                # tqdm will display a non-deterministic progress bar.
+                with tqdm(total=total_size, unit='B', unit_scale=True, desc=str(local_filename), miniters=1) as pbar:
+                    with open(local_filename, 'wb') as out_file:
+                        while True:
+                            buffer = response.read(block_size)
+                            # Break if no more data is read (end of file)
+                            if not buffer:
+                                break
+                            out_file.write(buffer)
+                            pbar.update(len(buffer))
+                return local_filename
         except (URLError, HTTPError) as e:
             raise FileFetcherError(
                 f"Failed to download file from '{url}': {e}")
@@ -111,7 +126,7 @@ class FileLoader:
         else:
             clone_parent_dir = destination_dir  # Already a Path object
             clone_parent_dir.mkdir(parents=True, exist_ok=True)
-            self.logger.info(
+            info(
                 f"Cloning repository into '{clone_parent_dir}'...")
 
         # Git clone creates a subdirectory named after the repo.
@@ -124,7 +139,7 @@ class FileLoader:
         # Handle existing target directory for clone
         if cloned_repo_path.exists():
             if destination_dir is None:  # If we created a temporary directory, always ensure it's clean
-                self.logger.warning(
+                warning(
                     f"Temporary clone directory '{cloned_repo_path}' already exists. Deleting and re-cloning to ensure freshness.")
                 try:
                     shutil.rmtree(cloned_repo_path)
@@ -132,8 +147,8 @@ class FileLoader:
                     raise FileFetcherError(
                         f"Failed to clean up existing temporary clone directory '{cloned_repo_path}': {e}")
             else:  # If user provided destination_dir, warn and return existing path
-                self.logger.warning(f"Target clone directory '{cloned_repo_path}' already exists. "
-                                    "Skipping clone to avoid overwriting. If you want to re-clone, delete it first or use a new destination.")
+                warning(f"Target clone directory '{cloned_repo_path}' already exists. "
+                        "Skipping clone to avoid overwriting. If you want to re-clone, delete it first or use a new destination.")
                 return cloned_repo_path
 
         try:
@@ -142,12 +157,12 @@ class FileLoader:
             # For typical AD data setup, shallow clone is often sufficient.
             command = ["git", "clone", "--depth",
                        "1", repo_url, str(cloned_repo_path)]
-            self.logger.info(f"Executing Git clone: {' '.join(command)}")
+            info(f"Executing Git clone: {' '.join(command)}")
 
             # Capture output for better error messages
             process = subprocess.run(
                 command, check=True, capture_output=True, text=True)
-            self.logger.info(
+            info(
                 f"Successfully cloned '{repo_url}' to '{cloned_repo_path}'")
             return cloned_repo_path
         except FileNotFoundError:
@@ -167,11 +182,11 @@ class FileLoader:
             if temp_dir.exists():
                 try:
                     if temp_dir.is_dir():
-                        self.logger.info(
+                        info(
                             f"Cleaning up temporary directory: {temp_dir}")
                         shutil.rmtree(temp_dir)
                     # No need to handle files separately as we only track temp_dirs
                 except OSError as e:
-                    self.logger.warning(
+                    warning(
                         f"Failed to remove temporary path '{temp_dir}': {e}")
         self.temp_dirs.clear()

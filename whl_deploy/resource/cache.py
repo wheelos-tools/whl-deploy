@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 
-import sys
 import shutil
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Union, Any
 
-from whl_deploy.common import (
-    info, warning, error, critical
-)
+from whl_deploy.common import info, error, warning, critical
+from whl_deploy.common import ensure_dir
 from whl_deploy.file_loader import FileLoader, FileFetcherError
 from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
 
@@ -18,6 +16,7 @@ class CacheManagerError(Exception):
 
 
 # --- Configuration Constants ---
+# Using Path object directly for consistency
 BAZEL_CACHE_DIR = Path("/var/cache/bazel/repo_cache")
 DEFAULT_CACHE_EXPORT_FILENAME = "bazel_repo_cache.tar.gz"
 
@@ -28,194 +27,203 @@ class CacheManager:
     """Manages Bazel repository cache (e.g., import, export, clear)."""
 
     def __init__(self, cache_dir: Path = BAZEL_CACHE_DIR):
-        self.cache_dir = cache_dir.resolve()
+        # Resolve path immediately to ensure it's absolute and consistent.
+        # This self.cache_dir now primarily serves as the default for `clear_cache`
+        # and `export_cache` if no input_path is provided.
+        self.default_managed_cache_dir = cache_dir.resolve()
         self.file_loader = FileLoader()
-        self.archive_manager = ArchiveManager() # Initialize the new archive manager
-        info(f"Initialized CacheManager for directory: {self.cache_dir}")
-
-    def _ensure_cache_dir_prepared(self) -> None:
-        """
-        Ensures the cache directory exists and has appropriate permissions.
-        This method is idempotent.
-        """
+        self.archive_manager = ArchiveManager()
         info(
-            f"Ensuring cache directory '{self.cache_dir}' exists and has correct permissions...")
-        try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            # Use 0o775 for directory: rwx for owner/group, r-x for others.
-            # This is commonly used for shared directories like cache,
-            # where Bazel might be run by different users within a group.
-            # chmod(mode) applies permissions.
-            self.cache_dir.chmod(0o775)
-            info(
-                f"Cache directory '{self.cache_dir}' is prepared with permissions 0775.")
-        except OSError as e:
-            # Raise CacheManagerError for consistency with other methods
-            raise CacheManagerError(
-                f"Failed to prepare cache directory '{self.cache_dir}': {e}. "
-                "Please check permissions for path or parent directories."
-            )
+            f"Initialized CacheManager with default managed directory: {self.default_managed_cache_dir}")
 
-    def import_cache(self, source_path: str, force_overwrite: bool = False) -> None:
+    def _prepare_target_directory(self, target_dir: Path, force_overwrite: bool) -> None:
         """
-        Imports a Bazel cache archive from a local file or URL and extracts it.
-        This will overwrite any existing contents in the cache directory,
-        optionally after user confirmation.
+        Prepares the target directory for new content.
+        Cleans existing content or raises an error if force_overwrite is False.
 
         Args:
-            source_path: Path to the local archive file or URL of the archive.
-            force_overwrite: If True, overwrite existing cache without asking.
-                             If False, prompt the user for confirmation if the directory is not empty.
+            target_dir: The pathlib.Path object for the target directory.
+            force_overwrite: If True, overwrite existing content without asking.
+                             If False, raises CacheManagerError if target_dir is not empty.
+        Raises:
+            CacheManagerError: If target_dir is not empty and force_overwrite is False.
         """
-        info(
-            f"Preparing to import cache from '{source_path}' to '{self.cache_dir}'.")
-        # Ensure cache_dir exists before checking its contents or attempting cleanup
-        self._ensure_cache_dir_prepared()
-
-        # Check if cache_dir is not empty and requires confirmation
-        cache_dir_is_not_empty = any(self.cache_dir.iterdir())
-        if cache_dir_is_not_empty:
-            if not force_overwrite:
-                warning(f"Existing cache found in '{self.cache_dir}'.")
-                # Logical error: Check for TTY before asking for input, not after
-                if not sys.stdin.isatty():
-                    raise CacheManagerError(
-                        "Existing cache found and running in non-interactive mode. "
-                        "Use --force to overwrite or clear manually."
-                    )
-                user_input = input(
-                    "This operation will delete all existing contents. Continue? (y/N): "
-                ).strip().lower()
-                if user_input != 'y':
-                    info("Operation cancelled by user.")
-                    return  # Exit without doing anything
-            else:
-                info("Force overwrite enabled. Proceeding to delete existing cache.")
-        else:
+        if not target_dir.exists():
             info(
-                f"Cache directory '{self.cache_dir}' is empty. Proceeding with import.")
+                f"Target directory '{target_dir}' does not exist. Skipping preparation.")
+            return  # Directory does not exist, do nothing as requested.
 
-        # Step 1: Clean up existing cache directory contents for a fresh import.
-        # It's safer to remove and re-create for idempotency and to avoid leftovers.
-        # Logical error: If self.cache_dir does not exist, shutil.rmtree will fail.
-        # _ensure_cache_dir_prepared() ensures it exists, so this check is for contents.
-        # If cache_dir_is_not_empty is True, it means cache_dir exists and has content.
-        # If force_overwrite or user confirmed, then delete.
-        if cache_dir_is_not_empty and (force_overwrite or user_input == 'y'): # Ensure we only delete if confirmed/forced
-            try:
-                info(f"Cleaning up existing cache directory: {self.cache_dir}")
-                shutil.rmtree(self.cache_dir)
-                info(
-                    f"Successfully deleted old cache from '{self.cache_dir}'.")
-            except OSError as e:
+        # If we reach here, target_dir exists. Now check its content.
+        dir_not_empty = any(target_dir.iterdir())
+
+        if dir_not_empty:
+            if not force_overwrite:
                 raise CacheManagerError(
-                    f"Failed to clean up existing cache in '{self.cache_dir}': {e}. "
-                    "Please check permissions or if the directory is in use."
+                    f"Target directory '{target_dir}' is not empty. "
+                    "Cannot proceed without force_overwrite=True. "
+                    "Please clear it manually or set force_overwrite to True."
                 )
 
-        # Re-prepare the directory to ensure it's empty and has correct permissions for extraction
-        self._ensure_cache_dir_prepared()
+            info(
+                f"Force overwrite enabled. Cleaning up existing content in directory: {target_dir}")
+            try:
+                shutil.rmtree(target_dir)
+                info(f"Successfully cleaned old content from '{target_dir}'.")
+            except OSError as e:
+                raise CacheManagerError(
+                    f"Failed to clean up existing content in '{target_dir}': {e}. "
+                    "Please check permissions or if the directory is in use."
+                )
+        else:
+            info(f"Target directory '{target_dir}' is empty. Proceeding.")
+
+    def import_cache(self, input_path: Union[str, Path], output_path: Union[str, Path] = BAZEL_CACHE_DIR, force_overwrite: bool = False) -> None:
+        """
+        Imports a Bazel cache archive from a local file or URL and extracts it
+        to the specified output directory.
+
+        Args:
+            input_path: Path to the local archive file or URL of the archive.
+            output_path: The directory where the cache will be extracted.
+                         Defaults to BAZEL_CACHE_DIR.
+            force_overwrite: If True, overwrite existing cache without requiring confirmation.
+                             If False and output_path is not empty, will raise an error.
+        """
+        # Resolve output_path to a Path object for robust handling
+        target_directory = Path(output_path).resolve().parent
+
+        info(
+            f"Preparing to import cache from '{input_path}' to '{target_directory}'.")
+
+        ensure_dir(target_directory)
 
         local_archive_path: Optional[Path] = None
         try:
-            local_archive_path = Path(self.file_loader.fetch(source_path))
+            # Fetch the archive (handles local files and URLs, temp downloads)
+            # Ensure input_path is treated as a string for fetch method (if it expects str)
+            local_archive_path = Path(self.file_loader.fetch(str(input_path)))
 
-            # Use the new ArchiveManager for decompression
-            self.archive_manager.decompress(local_archive_path, self.cache_dir) # <--- Using ArchiveManager
+            info(
+                f"Extracting cache archive '{local_archive_path}' to '{target_directory}'...")
+
+            # Use the ArchiveManager for decompression
+            self.archive_manager.decompress(
+                local_archive_path, target_directory)
 
             info("Cache imported and extracted successfully!")
 
         except FileFetcherError as e:
-            raise CacheManagerError(f"Failed to fetch cache archive: {e}")
-        except ArchiveManagerError as e: # Catch ArchiveManager's specific exception
-            raise CacheManagerError(f"Failed to decompress cache archive: {e}")
-        except Exception as e:
             raise CacheManagerError(
-                f"An unexpected error occurred during import from '{source_path}' or decompression: {e}" # Adjusted message
-            )
-        finally:
-            self.file_loader.cleanup_temp_files()
-
-    def export_cache(self, output_filename: str = DEFAULT_CACHE_EXPORT_FILENAME) -> None:
-        """
-        Exports the current Bazel cache directory to a compressed archive.
-
-        Args:
-            output_filename: The name of the output archive file (e.g., "my_cache.tar.gz").
-        """
-        self._ensure_cache_dir_prepared()
-
-        # Logical error: `any(self.cache_dir.iterdir())` will raise StopIteration if directory is empty.
-        # This is not a logical error in the sense of crashing, but it's not the most robust way to check.
-        # A simpler way to check if a directory is empty.
-        is_cache_dir_empty = not any(self.cache_dir.iterdir()) # Corrected check
-
-        if is_cache_dir_empty:
-            warning(
-                f"Cache directory '{self.cache_dir}' is empty. Nothing to export.")
-            return
-
-        # Convert output_filename to Path and resolve to absolute path
-        output_path = Path(output_filename).resolve()
-
-        # Use the new ArchiveManager for compression
-        try:
-            self.archive_manager.compress(self.cache_dir, output_path) # <--- Using ArchiveManager
-        except ArchiveManagerError as e: # Catch ArchiveManager's specific exception
-            raise CacheManagerError(f"Failed to export cache: {e}")
-        except Exception as e:
+                f"Failed to fetch cache archive from '{input_path}': {e}")
+        except ArchiveManagerError as e:
             raise CacheManagerError(
-                f"An unexpected error occurred during cache export: {e}"
-            )
-
-    def clear_cache(self) -> None:
-        """
-        Clears the Bazel repository cache directory.
-        Prompts for confirmation unless --force is used (assumed handled by CLI).
-        """
-        info(f"Preparing to clear cache at '{self.cache_dir}'.")
-        self._ensure_cache_dir_prepared()
-
-        # Logical error: `any(self.cache_dir.iterdir())` will raise StopIteration if directory is empty.
-        # Use a more robust check for empty directory.
-        is_cache_dir_empty = not any(self.cache_dir.iterdir()) # Corrected check
-
-        if is_cache_dir_empty:
-            info(
-                f"Cache directory '{self.cache_dir}' is already empty. Nothing to clear.")
-            return
-
-        # Logical error: force_overwrite check is missing here, and it's assumed by CLI.
-        # The prompt should be conditional on whether force_overwrite is true or not.
-        # If the CLI is always providing --force for non-interactive clear, then this is fine.
-        # If not, this needs 'force_clear' parameter. Assuming for now CLI handles it, so always prompt if not empty.
-        if not sys.stdin.isatty():
-            # If `force_clear` parameter was added to clear_cache, it would be checked here.
-            # For now, it's a hard error if not interactive.
-            raise CacheManagerError(
-                "Clearing cache in non-interactive mode. "
-                "This operation requires explicit confirmation or a '--force' flag (if implemented). "
-                "Please run interactively or adjust the script's call."
-            )
-
-        user_input = input(
-            f"Are you sure you want to delete all contents in '{self.cache_dir}'? (y/N): "
-        ).strip().lower()
-
-        if user_input != 'y':
-            info("Cache clear operation cancelled by user.")
-            return
-
-        try:
-            info(f"Deleting all contents in '{self.cache_dir}'...")
-            shutil.rmtree(self.cache_dir)
-            self._ensure_cache_dir_prepared()
-            info(f"Cache at '{self.cache_dir}' cleared successfully!")
+                f"Failed to decompress cache archive '{local_archive_path}': {e}")
         except OSError as e:
             raise CacheManagerError(
-                f"Failed to clear cache directory '{self.cache_dir}': {e}. "
+                f"File system error during cache import to '{target_directory}': {e}")
+        except Exception as e:
+            critical(
+                f"An unexpected error occurred during cache import: {e}", exc_info=True)
+            raise CacheManagerError(
+                f"An unexpected error occurred during cache import: {e}")
+        finally:
+            # Ensure temporary files from FileLoader are cleaned up
+            self.file_loader.cleanup_temp_files()
+
+    def export_cache(self, input_path: Union[str, Path] = BAZEL_CACHE_DIR, output_path: str = DEFAULT_CACHE_EXPORT_FILENAME) -> None:
+        """
+        Exports a Bazel cache directory to a compressed archive.
+
+        Args:
+            input_path: The directory containing the cache to be exported.
+                        Defaults to BAZEL_CACHE_DIR.
+            output_path: The path and filename for the output archive (e.g., "/path/to/my_cache.tar.gz").
+                         Defaults to DEFAULT_CACHE_EXPORT_FILENAME.
+        """
+        # Resolve input and output paths to Path objects for robust handling
+        source_directory = Path(input_path).resolve()
+        output_file_path = Path(output_path).resolve()
+
+        info(
+            f"Preparing to export cache from '{source_directory}' to '{output_file_path}'.")
+
+        # Ensure the source directory for export exists and is accessible
+        ensure_dir(source_directory)
+
+        # Check if the source cache directory is empty
+        if not source_directory.is_dir():
+            raise CacheManagerError(
+                f"Source cache directory '{source_directory}' does not exist or is not a directory. Nothing to export."
+            )
+        if not any(source_directory.iterdir()):
+            warning(
+                f"Cache directory '{source_directory}' is empty. Exporting an empty archive.")
+            # Optionally, you might want to raise an error or exit here if empty exports are not desired.
+            # For now, it will proceed to create an empty archive.
+
+        # Ensure the parent directory for the output file exists
+        ensure_dir(output_file_path.parent)
+
+        try:
+            info(
+                f"Compressing cache from '{source_directory}' to '{output_file_path}'...")
+            self.archive_manager.compress(source_directory, output_file_path)
+            info(f"Cache exported successfully to '{output_file_path}'!")
+        except ArchiveManagerError as e:
+            raise CacheManagerError(
+                f"Failed to export cache from '{source_directory}' to '{output_file_path}': {e}")
+        except OSError as e:
+            raise CacheManagerError(
+                f"File system error during cache export: {e}")
+        except Exception as e:
+            critical(
+                f"An unexpected error occurred during cache export: {e}", exc_info=True)
+            raise CacheManagerError(
+                f"An unexpected error occurred during cache export: {e}")
+
+    def clear_cache(self, force_clear: bool = False) -> None:
+        """
+        Clears the Bazel repository cache directory (self.default_managed_cache_dir).
+
+        Args:
+            force_clear: If True, clear cache without requiring confirmation.
+                         If False and default_managed_cache_dir is not empty, will raise an error.
+        """
+        info(
+            f"Preparing to clear cache at '{self.default_managed_cache_dir}'.")
+
+        # Ensure the cache directory exists before trying to clear it
+        ensure_dir(self.default_managed_cache_dir)
+
+        if not any(self.default_managed_cache_dir.iterdir()):
+            info(
+                f"Cache directory '{self.default_managed_cache_dir}' is already empty. Nothing to clear.")
+            return
+
+        # If not empty and not forced, raise an error
+        if not force_clear:
+            raise CacheManagerError(
+                f"Cache directory '{self.default_managed_cache_dir}' is not empty. "
+                "Cannot proceed without --force (or equivalent) to clear existing content. "
+                "Please run with --force."
+            )
+
+        try:
+            info(
+                f"Deleting all contents in '{self.default_managed_cache_dir}'...")
+            shutil.rmtree(self.default_managed_cache_dir)
+
+            # Re-create the directory after deletion to ensure it exists for future use
+            ensure_dir(self.default_managed_cache_dir)
+            info(
+                f"Cache at '{self.default_managed_cache_dir}' cleared successfully!")
+        except OSError as e:
+            raise CacheManagerError(
+                f"Failed to clear cache directory '{self.default_managed_cache_dir}': {e}. "
                 "Please check permissions or if the directory is in use."
             )
         except Exception as e:
+            critical(
+                f"An unexpected error occurred during cache clear: {e}", exc_info=True)
             raise CacheManagerError(
                 f"An unexpected error occurred during cache clear: {e}")
