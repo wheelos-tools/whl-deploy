@@ -1,33 +1,22 @@
 # whl_deploy
 
-`whl_deploy` is a powerful tool designed to significantly simplify the complex process of setting up and deploying Apollo. It automates host environment prerequisites and streamlines the import/export of essential Apollo resources, ensuring a highly efficient, consistent, and seamless deployment experience.
+`whl_deploy` is a powerful tool **designed specifically for Apollo deployment**, aiming to significantly simplify the setup of Apollo environments and the import/export of resources. By automating key steps, `whl_deploy` ensures an efficient, consistent, and seamless Apollo deployment experience.
 
 ## ✨ Key Features
 
-`whl_deploy` provides the following core functionalities, covering the entire Apollo deployment lifecycle:
+`whl_deploy` provides three core functionalities, covering the essential aspects of the Apollo deployment lifecycle:
 
-1.  **Automated Host Environment Setup**:
-    *   Automatically installs and configures Docker and the NVIDIA Container Toolkit.
-    *   Applies necessary system-level optimizations and configurations to provide an optimal environment for Apollo.
-2.  **Apollo Resource Import & Deployment**:
-    *   One-command import and deployment of all critical Apollo components, including:
-        *   Core Container Images (Docker Image)
-        *   Apollo Source Code
-        *   AI Models
-        *   High-Definition Maps
-        *   Compiled Cache files
-    *   Drastically reduces Apollo's initial setup and startup time.
-3.  **Resource Package Export & Distribution (Helper)**:
-    *   Offers a convenient function to package pre-configured or downloaded Apollo resources (e.g., source code, models, cache) into reusable bundles.
-    *   These resource packages are ideal for quick and consistent deployments across multiple machines (as input for Step 2), especially useful in offline environments or for large-scale deployments.
+1.  **Automated Environment Setup**: Installs and configures Docker, NVIDIA Container Toolkit, and optimizes the system, providing an ideal environment for Apollo.
+2.  **Apollo Resource Import**: Unified import of core Apollo components, including Docker images, source code, AI models, high-definition maps, and compiled caches, drastically reducing initial setup and startup times.
+3.  **Resource Packaging & Distribution**: Packages pre-configured or downloaded Apollo resources into reusable bundles, facilitating rapid deployment across multiple machines, especially useful in offline environments.
 
 ## 🚀 Quick Start
 
-This section guides you on how to quickly install and use `whl_deploy`.
+This section guides you on how to quickly install and use `whl_deploy`, focusing on the most common end-to-end deployment flow.
 
 ### 1. Installation
 
-To support the latest PEP 660 (editable installs), ensure your `setuptools` and `pip` versions are up-to-date before installation:
+To ensure compatibility, please upgrade your `setuptools` and `pip` first:
 
 ```bash
 # Highly Recommended: Upgrade setuptools and pip first
@@ -38,36 +27,35 @@ pip install --upgrade pip
 pip install whl-deploy
 ```
 
-### setup env
-```shell
+### 2. End-to-End Deployment - Express Mode!
+
+The following two commands are the essence of `whl_deploy`, covering the vast majority of Apollo deployment scenarios:
+
+#### Step A: Prepare Host Environment
+
+This command will automatically install Docker, the NVIDIA Container Toolkit, and perform necessary system configurations. This is the foundation for running Apollo.
+
+```bash
 whl-deploy setup all
 ```
 
-### import
-```shell
+#### Step B: Import Apollo Resources
+
+After setting up the environment, you can import all pre-packaged core Apollo resources, such as source code, Docker images, AI models, etc., with a single command. **Please ensure your `source` package is ready.**
+
+```bash
 whl-deploy import all --package=source
 ```
 
-### export
-```shell
-whl-deploy export all --package=source
-```
+---
 
-### 2. Configure Host Environment (Setup Host)
+### 3. More Granular Control
 
-This is the foundation for running Apollo. You can choose a one-command full configuration or proceed step-by-step as needed.
+If you require more fine-grained control, `whl_deploy` also provides individual commands.
 
-#### Option 1: One-Command Full Configuration (Recommended)
+#### 3.1. Host Environment Configuration - Step-by-Step
 
-This command will automatically install Docker, the NVIDIA Container Toolkit, and perform necessary system configurations.
-
-```bash
-whl-deploy setup full
-```
-
-#### Option 2: Step-by-Step Configuration
-
-If you require more granular control, you can execute these commands individually:
+In some cases, you might want to configure the host environment step-by-step:
 
 ```bash
 # Only install and configure Docker
@@ -80,25 +68,22 @@ whl-deploy setup nvidia
 whl-deploy setup host
 ```
 
-### 3. Import & Export Apollo Resources
+#### 3.2. Resource Import & Export - Category Management
 
-`whl_deploy` provides flexible commands to manage various Apollo resources.
+`whl_deploy` allows you to manage various Apollo resources separately.
 
-#### 3.1 Source Code
+**a. Source Code**
 
 *   **Import Source Code Package**: Imports a zipped Apollo source code archive to a specified location.
     ```bash
     whl-deploy import source-code --input=apollo-lite-main.zip
     ```
-    *   **Hint**: This command typically unzips the code into Apollo's specific working directory, either inside or outside the container.
-
 *   **Export Source Code Package**: Packages the source code from the current Apollo environment for reuse elsewhere.
     ```bash
     whl-deploy export source-code --output=apollo-main.zip
     ```
-    *   **Hint**: The exported package can be used as input for `import source-code`.
 
-#### 3.2 Compiled Cache (Bazel Cache)
+**b. Compiled Cache (Bazel Cache)**
 
 The Bazel compilation cache is crucial for accelerating the Apollo build process.
 
@@ -106,13 +91,12 @@ The Bazel compilation cache is crucial for accelerating the Apollo build process
     ```bash
     whl-deploy import cache --input=bazel_cache.tar.gz
     ```
-
 *   **Export Compiled Cache**: Exports the current Bazel cache for use across multiple machines or in future deployments.
     ```bash
     whl-deploy export cache --output=bazel_cache.tar.gz
     ```
 
-#### 3.3 Docker Images
+**c. Docker Images**
 
 Manage Apollo's core container images.
 
@@ -120,31 +104,26 @@ Manage Apollo's core container images.
     ```bash
     whl-deploy import docker-image --input=whl_docker_image.tar
     ```
-
 *   **Export Docker Image**:
     *   **Export information about all currently recognized Apollo-related Docker images**:
         ```bash
         whl-deploy export docker-image --info
         ```
-        *   **Hint**: This command lists the names and tags of all Apollo-related images managed or recognized by `whl_deploy`.
-
     *   **Export a specific Docker image to a `.tar` file**:
         ```bash
         whl-deploy export docker-image --input=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 --output=cuda_image.tar
         ```
-        *   **Note**: Here, the `--input` parameter should specify the **name and tag of the image to be exported**, not a file. I have corrected this based on the actual functionality. If you wish to export a specific Apollo base image, replace it with the corresponding name. For example: `whl-deploy export docker-image --input=apollo:dev-latest --output=apollo_dev.tar`
+        *   **Note**: Here, the `--input` parameter should specify the **name and tag of the image to be exported**. For example, to export an Apollo development image, use: `whl-deploy export docker-image --input=apollo:dev-latest --output=apollo_dev.tar`
 
-#### 3.4 High-Definition Maps (HD Maps)
+**d. High-Definition Maps (HD Maps) (TODO - To Be Implemented)**
 
-*   **Import HD Maps** (TODO - To Be Implemented)
+*   `whl-deploy import hd-maps --input=...`
+*   `whl-deploy export hd-maps --output=...`
 
-*   **Export HD Maps** (TODO - To Be Implemented)
+**e. AI Models (TODO - To Be Implemented)**
 
-#### 3.5 AI Models
-
-*   **Import AI Models** (TODO - To Be Implemented)
-
-*   **Export AI Models** (TODO - To Be Implemented)
+*   `whl-deploy import models --input=...`
+*   `whl-deploy export models --output=...`
 
 ## 🤝 Contribution & Support
 
