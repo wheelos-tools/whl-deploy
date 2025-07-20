@@ -141,10 +141,12 @@ class HostConfigManager:
         # Given the context, `a+rwx` (0777) is often used for this specific type of shared cache.
         # If strict security, then ensure Bazel user has access and others read-only.
         # Sticking with original intent (shared writeable) but adding comment.
-        execute_command(["chmod", "0777", str(BAZEL_CACHE_DIR)],
-                        capture_output=False, check=True)
+        execute_command(["chown", "-R", "root:docker", str(BAZEL_CACHE_DIR)],
+                        capture_output=False, check=True, use_sudo=True)
+        execute_command(["chmod", "-R", "2775", str(BAZEL_CACHE_DIR)],
+                        capture_output=False, check=True, use_sudo=True)
         info(
-            f"Set permissions for '{BAZEL_CACHE_DIR}' to 0777 (world-writable for shared cache).")
+            f"Set permissions for '{BAZEL_CACHE_DIR}' to 2775 (group writable for shared cache).")
 
         info("Bazel cache directory configured.")
 
