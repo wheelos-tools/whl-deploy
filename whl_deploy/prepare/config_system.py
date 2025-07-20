@@ -52,8 +52,7 @@ class HostConfigManager:
                          "modprobe", "lsmod", "cp", "mkdir", "chmod", "tee"]
         for cmd in required_cmds:
             try:
-                execute_command(["which", cmd], check=True,
-                                capture_output=True, use_sudo=False)  # capture_output=True to avoid printing to console
+                execute_command(["which", cmd], check=True, capture_output=True)
             except (FileNotFoundError, CommandExecutionError):
                 raise RuntimeError(
                     f"Required command '{cmd}' not found. Please ensure it's installed and in PATH.")
@@ -79,7 +78,7 @@ class HostConfigManager:
         sysctl_value_matches = False
         try:
             sysctl_result = execute_command(
-                ["sysctl", "-n", "kernel.core_pattern"], check=True, capture_output=True, use_sudo=False).stdout.strip()
+                ["sysctl", "-n", "kernel.core_pattern"], check=True, capture_output=True).stdout.strip()
             if sysctl_result == core_pattern_expected:
                 sysctl_value_matches = True
                 info(
@@ -132,7 +131,7 @@ class HostConfigManager:
                 f"Bazel cache directory '{BAZEL_CACHE_DIR}' already exists. Skipping creation.")
         else:
             execute_command(["mkdir", "-p", str(BAZEL_CACHE_DIR)],
-                            capture_output=False, check=True)
+                            capture_output=False, check=True, use_sudo=True)
             info(f"Created Bazel cache directory: {BAZEL_CACHE_DIR}.")
 
         # Ensure permissions are appropriate for a shared cache (0777 or a+rwx is common for shared caches,
@@ -216,7 +215,7 @@ class HostConfigManager:
         info("Reloading uvcvideo module if loaded...")
         try:
             lsmod_output = execute_command(
-                ["lsmod"], check=True, capture_output=True, use_sudo=False).stdout
+                ["lsmod"], check=True, capture_output=True).stdout
             if "uvcvideo" in lsmod_output:
                 info("uvcvideo module is currently loaded. Unloading...")
                 execute_command(["modprobe", "-r", "uvcvideo"],
