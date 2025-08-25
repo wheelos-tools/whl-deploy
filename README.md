@@ -76,11 +76,11 @@ whl-deploy setup host
 
 *   **Import Source Code Package**: Imports a zipped Apollo source code archive to a specified location.
     ```bash
-    whl-deploy import source-code --input=apollo-lite-main.zip
+    whl-deploy import source_code --input=apollo-lite-main.zip
     ```
 *   **Export Source Code Package**: Packages the source code from the current Apollo environment for reuse elsewhere.
     ```bash
-    whl-deploy export source-code --output=apollo-main.zip
+    whl-deploy export source_code --output=apollo-main.zip
     ```
 
 **b. Compiled Cache (Bazel Cache)**
@@ -102,23 +102,23 @@ Manage Apollo's core container images.
 
 *   **Import Docker Image**: Imports a Docker image from a `.tar` file. This is useful for offline deployments or pre-loading images.
     ```bash
-    whl-deploy import docker-image --input=whl_docker_image.tar
+    whl-deploy import docker_image --input=whl_docker_image.tar
     ```
 *   **Export Docker Image**:
     *   **Export information about all currently recognized Apollo-related Docker images**:
         ```bash
-        whl-deploy export docker-image --info
+        whl-deploy export docker_image --info
         ```
     *   **Export a specific Docker image to a `.tar` file**:
         ```bash
-        whl-deploy export docker-image --input=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 --output=cuda_image.tar
+        whl-deploy export docker_image --input=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 --output=cuda_image.tar
         ```
-        *   **Note**: Here, the `--input` parameter should specify the **name and tag of the image to be exported**. For example, to export an Apollo development image, use: `whl-deploy export docker-image --input=apollo:dev-latest --output=apollo_dev.tar`
+        *   **Note**: Here, the `--input` parameter should specify the **name and tag of the image to be exported**. For example, to export an Apollo development image, use: `whl-deploy export docker_image --input=apollo:dev-latest --output=apollo_dev.tar`
 
 **d. High-Definition Maps (HD Maps) (TODO - To Be Implemented)**
 
-*   `whl-deploy import hd-maps --input=...`
-*   `whl-deploy export hd-maps --output=...`
+*   `whl-deploy import hd_maps --input=...`
+*   `whl-deploy export hd_maps --output=...`
 
 **e. AI Models (TODO - To Be Implemented)**
 
