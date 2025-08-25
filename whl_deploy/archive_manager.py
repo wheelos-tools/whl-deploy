@@ -1,4 +1,5 @@
 import os
+import stat
 import tarfile
 import zipfile
 from pathlib import Path
@@ -134,7 +135,7 @@ class ArchiveManager:
     def _decompress_tar(self, archive_path: Path, destination_path: Path, force_filter: Optional[str]) -> None:
         """Internal helper for decompressing tar archives."""
         try:
-            with tarfile.open(archive_path, "r:*") as tar:
+            with tarfile.open(archive_path, "r:*", errorlevel=1) as tar:
                 if force_filter and hasattr(tarfile, 'data_filter'):
                     tar.extractall(path=destination_path, filter=force_filter)
                 elif force_filter:
@@ -148,6 +149,8 @@ class ArchiveManager:
                 f"Failed to read tar archive '{archive_path}': {e}. "
                 "Is it corrupted or not a recognized tar compression?"
             )
+        except tarfile.AbsoluteLinkError as e:
+            warning(f"Skipping absolute link in tar archive '{archive_path}': {e}. ")
 
     def _decompress_zip(self, archive_path: Path, destination_path: Path) -> None:
         """Internal helper for decompressing zip archives."""
@@ -159,7 +162,24 @@ class ArchiveManager:
                         warning(
                             f"Skipping potentially malicious path in zip archive: {member.filename}")
                         continue
-                    zf.extract(member, path=destination_path)
+                    attr = member.external_attr >> 16
+                    if attr & stat.S_IFLNK == stat.S_IFLNK:
+                        # Handle symbolic links
+                        link_target = zf.read(member.filename).decode('utf-8')
+                        os.symlink(link_target, destination_path / member.filename)
+                        continue
+                    # regular file or directory
+                    extracted_path = zf.extract(member, path=destination_path)
+
+                    # Extract the permission bits (last 9 bits of external_attr >> 16)
+                    # and apply them with os.chmod
+                    mode = attr & 0o777
+                    if mode:
+                        try:
+                            os.chmod(extracted_path, mode)
+                        except OSError as e:
+                            warning(r'Could not set permissions for'
+                                    f' {member.filename}: {e}')
         except zipfile.BadZipFile as e:
             raise ArchiveManagerError(
                 f"Failed to read zip archive '{archive_path}': {e}. Is it corrupted?")
