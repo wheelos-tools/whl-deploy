@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "whl-deploy"
-version = "0.0.2"
+version = "0.0.3"
 description = "A deployment tool for WheelOS."
 readme = "README.md"
 authors = [
   { name = "daohu527", email = "daohu527@gmail.com" }
 ]
-urls = { Homepage = "https://github.com/wheelos-tools/whl-conf", "Bug Tracker" = "https://github.com/wheelos-tools/whl-conf/issues" }
+urls = { Homepage = "https://github.com/wheelos-tools/whl-deploy", "Bug Tracker" = "https://github.com/wheelos-tools/whl-deploy/issues" }
 classifiers = [
   "Development Status :: 3 - Alpha", # Project's development stage
   "Programming Language :: Python :: 3",
@@ -38,7 +38,7 @@ dependencies = [
 ]
 
 # Keywords for PyPI search.
-keywords = ["whl-conf", "wheelos", "configuration-management", "cli-tool"]
+keywords = ["whl-deploy", "wheelos", "cli-tool"]
 
 [project.scripts]
 # Command-line entry points.
