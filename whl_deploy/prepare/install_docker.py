@@ -111,7 +111,7 @@ class DockerManager:
                         use_sudo=True,
                         check=True,
                         capture_output=True,
-                        input_data=repo_line.encode('utf-8'))
+                        input_data=repo_line)
         info(f"Docker repository configured at {DOCKER_REPO_LIST_PATH}.")
 
         info("Updating apt package list with new repository...")
@@ -163,9 +163,8 @@ class DockerManager:
         try:
             self._check_pre_conditions()
             if not self._is_docker_already_functional():
-                pass
-                # self._install_prereq_packages()
-                # self._setup_docker_repo_and_install()
+                self._install_prereq_packages()
+                self._setup_docker_repo_and_install()
             self._post_install_settings()
 
             info("===== Docker Installation Completed Successfully! =====")
