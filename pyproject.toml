@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "whl-deploy"
-version = "0.0.3"
+version = "0.0.4"
 description = "A deployment tool for WheelOS."
 readme = "README.md"
 authors = [
