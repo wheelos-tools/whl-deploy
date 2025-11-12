@@ -2,6 +2,7 @@ import os
 import stat
 import tarfile
 import zipfile
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -49,96 +50,110 @@ class ArchiveManager:
                                  top-level directory renaming is not possible.
         """
         info(f"Decompressing '{archive_path}' to '{destination_path}'...")
-        if not archive_path.is_file():
-            raise ArchiveManagerError(f"Archive file not found: {archive_path}")
-
-        # Ensure destination_path exists *before* extraction
-        destination_path.mkdir(parents=True, exist_ok=True)
-
-        # Record initial contents of destination_path (if any), to help identify newly extracted top-level dir.
-        # This is a robust way to find what was newly added.
-        initial_contents_names = set(p.name for p in destination_path.iterdir())
-
-        if tarfile.is_tarfile(archive_path):
-            self._decompress_tar(archive_path, destination_path, force_filter)
-        elif zipfile.is_zipfile(archive_path):
-            self._decompress_zip(archive_path, destination_path)
-        else:
-            raise ArchiveManagerError(
-                f"'{archive_path.name}' is not a recognized archive format (.tar, .tar.gz, .zip, etc.)."
-            )
-
-        # Apply top-level directory renaming after successful decompression
-        if target_top_level_dir_name:
+        if archive_path.is_dir():
             info(
-                f"Attempting to rename top-level directory to '{target_top_level_dir_name}'..."
+                f"Archive path '{archive_path}' is a directory -- using direct copy mode"
             )
-
-            # Identify the newly extracted top-level items
-            extracted_top_level_items = [
-                p
-                for p in destination_path.iterdir()
-                if p.name not in initial_contents_names
-            ]
-
-            if not extracted_top_level_items:
+            destination_path.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copytree(archive_path, destination_path, dirs_exist_ok=True)
+            except Exception as e:
                 raise ArchiveManagerError(
-                    f"No new content was extracted to '{destination_path}'. "
-                    "Cannot perform top-level directory rename."
+                    f"Failed to copy directory '{archive_path}' to '{destination_path}': {e}"
+                )
+            info("Directory copy completed successfully!")
+        elif not archive_path.is_file():
+            raise ArchiveManagerError(f"Archive file not found: {archive_path}")
+        else:
+            # Ensure destination_path exists *before* extraction
+            destination_path.mkdir(parents=True, exist_ok=True)
+
+            # Record initial contents of destination_path (if any), to help identify newly extracted top-level dir.
+            # This is a robust way to find what was newly added.
+            initial_contents_names = set(p.name for p in destination_path.iterdir())
+
+            if tarfile.is_tarfile(archive_path):
+                self._decompress_tar(archive_path, destination_path, force_filter)
+            elif zipfile.is_zipfile(archive_path):
+                self._decompress_zip(archive_path, destination_path)
+            else:
+                raise ArchiveManagerError(
+                    f"'{archive_path.name}' is not a recognized archive format (.tar, .tar.gz, .zip, etc.)."
                 )
 
-            # Filter for directories among the newly extracted items
-            extracted_top_level_dirs = [
-                p for p in extracted_top_level_items if p.is_dir()
-            ]
-
-            if len(extracted_top_level_dirs) == 1:
-                source_path = extracted_top_level_dirs[0]
-                old_name = source_path.name
-                target_path = destination_path / target_top_level_dir_name
-
-                # Check if the target_path already exists and is not the source_path
-                if target_path.exists() and target_path != source_path:
-                    raise ArchiveManagerError(
-                        f"Target path '{target_path}' already exists and is different from source path '{source_path}'. "
-                        "Cannot rename to an existing path."
-                    )
-
-                try:
-                    info(
-                        f"Renaming detected top-level directory '{old_name}' to '{target_top_level_dir_name}'..."
-                    )
-                    source_path.rename(target_path)
-                    info("Top-level directory renaming completed successfully.")
-                except OSError as e:
-                    error(f"Failed to rename '{source_path}' to '{target_path}': {e}")
-                    raise ArchiveManagerError(
-                        f"Failed to rename top-level directory: {e}"
-                    )
-            elif len(extracted_top_level_dirs) > 1:
-                # This means the archive extracted multiple directories at the top level
-                raise ArchiveManagerError(
-                    f"Multiple top-level directories detected in '{destination_path}' after extraction: "
-                    f"{[p.name for p in extracted_top_level_dirs]}. "
-                    "Automatic single top-level directory renaming is not possible."
+            # Apply top-level directory renaming after successful decompression
+            if target_top_level_dir_name:
+                info(
+                    f"Attempting to rename top-level directory to '{target_top_level_dir_name}'..."
                 )
-            else:  # No directories, only files, or no new content that is a directory
-                # Check if there are any new files at top level
-                extracted_top_level_files = [
-                    p for p in extracted_top_level_items if p.is_file()
+
+                # Identify the newly extracted top-level items
+                extracted_top_level_items = [
+                    p
+                    for p in destination_path.iterdir()
+                    if p.name not in initial_contents_names
                 ]
-                if extracted_top_level_files:
+
+                if not extracted_top_level_items:
                     raise ArchiveManagerError(
-                        f"Archive extracted files directly to '{destination_path}' (e.g., {extracted_top_level_files[0].name}). "
-                        "No single top-level directory was found to rename."
-                    )
-                else:  # Should not happen if extracted_top_level_items is not empty, but good for completeness
-                    raise ArchiveManagerError(
-                        f"Unexpected content structure in '{destination_path}'. "
-                        "No single top-level directory was found to rename."
+                        f"No new content was extracted to '{destination_path}'. "
+                        "Cannot perform top-level directory rename."
                     )
 
-        info("Decompression completed successfully!")
+                # Filter for directories among the newly extracted items
+                extracted_top_level_dirs = [
+                    p for p in extracted_top_level_items if p.is_dir()
+                ]
+
+                if len(extracted_top_level_dirs) == 1:
+                    source_path = extracted_top_level_dirs[0]
+                    old_name = source_path.name
+                    target_path = destination_path / target_top_level_dir_name
+
+                    # Check if the target_path already exists and is not the source_path
+                    if target_path.exists() and target_path != source_path:
+                        raise ArchiveManagerError(
+                            f"Target path '{target_path}' already exists and is different from source path '{source_path}'. "
+                            "Cannot rename to an existing path."
+                        )
+
+                    try:
+                        info(
+                            f"Renaming detected top-level directory '{old_name}' to '{target_top_level_dir_name}'..."
+                        )
+                        source_path.rename(target_path)
+                        info("Top-level directory renaming completed successfully.")
+                    except OSError as e:
+                        error(
+                            f"Failed to rename '{source_path}' to '{target_path}': {e}"
+                        )
+                        raise ArchiveManagerError(
+                            f"Failed to rename top-level directory: {e}"
+                        )
+                elif len(extracted_top_level_dirs) > 1:
+                    # This means the archive extracted multiple directories at the top level
+                    raise ArchiveManagerError(
+                        f"Multiple top-level directories detected in '{destination_path}' after extraction: "
+                        f"{[p.name for p in extracted_top_level_dirs]}. "
+                        "Automatic single top-level directory renaming is not possible."
+                    )
+                else:  # No directories, only files, or no new content that is a directory
+                    # Check if there are any new files at top level
+                    extracted_top_level_files = [
+                        p for p in extracted_top_level_items if p.is_file()
+                    ]
+                    if extracted_top_level_files:
+                        raise ArchiveManagerError(
+                            f"Archive extracted files directly to '{destination_path}' (e.g., {extracted_top_level_files[0].name}). "
+                            "No single top-level directory was found to rename."
+                        )
+                    else:  # Should not happen if extracted_top_level_items is not empty, but good for completeness
+                        raise ArchiveManagerError(
+                            f"Unexpected content structure in '{destination_path}'. "
+                            "No single top-level directory was found to rename."
+                        )
+
+            info("Decompression completed successfully!")
 
     def _decompress_tar(
         self, archive_path: Path, destination_path: Path, force_filter: Optional[str]
