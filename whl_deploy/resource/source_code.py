@@ -5,9 +5,7 @@ import shutil
 from pathlib import Path
 from typing import Optional, Union
 
-from whl_deploy.common import (
-    info, warning, error, critical
-)
+from whl_deploy.common import info, warning, error, critical
 from whl_deploy.common import ensure_dir
 from whl_deploy.file_loader import FileLoader, FileFetcherError
 from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
@@ -15,6 +13,7 @@ from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
 
 class SourcePackageManagerError(Exception):
     """Custom exception for SourcePackageManager specific errors."""
+
     pass
 
 
@@ -47,15 +46,20 @@ class SourcePackageManager:
         """
         # This will be the default directory for operations like `clear`
         # and `export` if no specific path is provided.
-        self.source_code_dir: Path = source_code_dir if source_code_dir else DEFAULT_SOURCE_DIR
+        self.source_code_dir: Path = (
+            source_code_dir if source_code_dir else DEFAULT_SOURCE_DIR
+        )
 
         self.file_fetcher = FileLoader()
         self.archive_manager = ArchiveManager()
 
         info(
-            f"Initialized SourcePackageManager. Default managed source directory: {self.source_code_dir}")
+            f"Initialized SourcePackageManager. Default managed source directory: {self.source_code_dir}"
+        )
 
-    def _prepare_target_directory(self, target_dir: Path, force_overwrite: bool) -> None:
+    def _prepare_target_directory(
+        self, target_dir: Path, force_overwrite: bool
+    ) -> None:
         """
         Prepares the target directory for new content.
         Cleans existing content or raises an error if force_overwrite is False.
@@ -69,7 +73,8 @@ class SourcePackageManager:
         """
         if not target_dir.exists():
             info(
-                f"Target directory '{target_dir}' does not exist. Skipping preparation.")
+                f"Target directory '{target_dir}' does not exist. Skipping preparation."
+            )
             return  # Directory does not exist, do nothing as requested.
 
         # If we reach here, target_dir exists. Now check its content.
@@ -84,7 +89,8 @@ class SourcePackageManager:
                 )
 
             info(
-                f"Force overwrite enabled. Cleaning up existing content in directory: {target_dir}")
+                f"Force overwrite enabled. Cleaning up existing content in directory: {target_dir}"
+            )
             try:
                 shutil.rmtree(target_dir)
                 info(f"Successfully cleaned old content from '{target_dir}'.")
@@ -96,7 +102,12 @@ class SourcePackageManager:
         else:
             info(f"Target directory '{target_dir}' is empty. Proceeding.")
 
-    def import_source_package(self, input_path: Union[str, Path], output_path: Union[str, Path] = ".", force_overwrite: bool = True) -> None:
+    def import_source_package(
+        self,
+        input_path: Union[str, Path],
+        output_path: Union[str, Path] = ".",
+        force_overwrite: bool = True,
+    ) -> None:
         """
         Imports source code from a .tar.gz archive (local file or URL)
         to a specified output directory.
@@ -111,7 +122,8 @@ class SourcePackageManager:
         target_directory = Path(output_path).resolve().parent
 
         info(
-            f"Starting import of source package from '{input_path}' to '{target_directory}'...")
+            f"Starting import of source package from '{input_path}' to '{target_directory}'..."
+        )
 
         try:
             self._prepare_target_directory(output_path, force_overwrite)
@@ -125,33 +137,45 @@ class SourcePackageManager:
             local_archive_path = Path(self.file_fetcher.fetch(str(input_path)))
 
             info(
-                f"Extracting source code archive '{local_archive_path}' to '{target_directory}'...")
+                f"Extracting source code archive '{local_archive_path}' to '{target_directory}'..."
+            )
 
             self.archive_manager.decompress(
-                local_archive_path, target_directory, target_top_level_dir_name=DEFAULT_SOURCE_DIR.name)
+                local_archive_path,
+                target_directory,
+                target_top_level_dir_name=DEFAULT_SOURCE_DIR.name,
+            )
 
             info(f"Source code imported successfully to '{target_directory}'!")
 
         except FileFetcherError as e:
             raise SourcePackageManagerError(
-                f"Failed to fetch source code archive from '{input_path}': {e}")
+                f"Failed to fetch source code archive from '{input_path}': {e}"
+            )
         except ArchiveManagerError as e:
             raise SourcePackageManagerError(
-                f"Failed to extract source code archive '{local_archive_path}' to '{target_directory}': {e}")
+                f"Failed to extract source code archive '{local_archive_path}' to '{target_directory}': {e}"
+            )
         except OSError as e:  # Catch OS-level errors during file operations
             raise SourcePackageManagerError(
-                f"File system error during import to '{target_directory}': {e}")
+                f"File system error during import to '{target_directory}': {e}"
+            )
         except Exception as e:  # Catch any other unexpected errors
             critical(
-                f"An unexpected error occurred during source code import: {e}", exc_info=True)
-            raise SourcePackageManagerError(
-                f"An unexpected error occurred: {e}")
+                f"An unexpected error occurred during source code import: {e}",
+                exc_info=True,
+            )
+            raise SourcePackageManagerError(f"An unexpected error occurred: {e}")
         finally:
             # TODO(zero): Ensure temporary files from FileLoader are cleaned up
             # self.file_fetcher.cleanup_temp_files()
             pass
 
-    def export_source_package(self, input_path: Union[str, Path] = DEFAULT_SOURCE_DIR, output_path: Union[str, Path] = DEFAULT_SOURCE_EXPORT_FILENAME) -> None:
+    def export_source_package(
+        self,
+        input_path: Union[str, Path] = DEFAULT_SOURCE_DIR,
+        output_path: Union[str, Path] = DEFAULT_SOURCE_EXPORT_FILENAME,
+    ) -> None:
         """
         Exports a source code directory to a .tar.gz archive.
 
@@ -165,7 +189,8 @@ class SourcePackageManager:
         output_file_path = Path(output_path).resolve()
 
         info(
-            f"Preparing to export source code from '{source_directory}' to '{output_file_path}'.")
+            f"Preparing to export source code from '{source_directory}' to '{output_file_path}'."
+        )
 
         # Ensure the source directory for export exists and is accessible
         ensure_dir(source_directory)
@@ -173,31 +198,36 @@ class SourcePackageManager:
         # Validate source directory
         if not source_directory.is_dir():
             raise SourcePackageManagerError(
-                f"Source directory '{source_directory}' does not exist or is not a directory. Nothing to export.")
+                f"Source directory '{source_directory}' does not exist or is not a directory. Nothing to export."
+            )
         if not any(source_directory.iterdir()):
             warning(
-                f"Source directory '{source_directory}' is empty. Exporting an empty archive.")
+                f"Source directory '{source_directory}' is empty. Exporting an empty archive."
+            )
 
         # Ensure parent directory for output exists
         ensure_dir(output_file_path.parent)
 
         try:
             info(
-                f"Compressing source code from '{source_directory}' to '{output_file_path}'...")
-            self.archive_manager.compress(
-                source_directory, output_file_path)
+                f"Compressing source code from '{source_directory}' to '{output_file_path}'..."
+            )
+            self.archive_manager.compress(source_directory, output_file_path)
             info(f"Source code exported successfully to '{output_file_path}'!")
         except ArchiveManagerError as e:
             raise SourcePackageManagerError(
-                f"Failed to export source code from '{source_directory}' to '{output_file_path}': {e}")
+                f"Failed to export source code from '{source_directory}' to '{output_file_path}': {e}"
+            )
         except OSError as e:  # Catch OS-level errors during file operations
             raise SourcePackageManagerError(
-                f"File system error during export to '{output_file_path}': {e}")
+                f"File system error during export to '{output_file_path}': {e}"
+            )
         except Exception as e:  # Catch any other unexpected errors
             critical(
-                f"An unexpected error occurred during source code export: {e}", exc_info=True)
-            raise SourcePackageManagerError(
-                f"An unexpected error occurred: {e}")
+                f"An unexpected error occurred during source code export: {e}",
+                exc_info=True,
+            )
+            raise SourcePackageManagerError(f"An unexpected error occurred: {e}")
 
     def clear_source_package(self, force_clear: bool = False) -> None:
         """
@@ -207,15 +237,15 @@ class SourcePackageManager:
             force_clear: If True, clear the directory without requiring confirmation.
                          If False and the directory is not empty, will raise an error.
         """
-        info(
-            f"Preparing to clear source package at '{self.source_code_dir}'.")
+        info(f"Preparing to clear source package at '{self.source_code_dir}'.")
 
         # Ensure the directory exists before trying to clear it
         ensure_dir(self.source_code_dir)
 
         if not any(self.source_code_dir.iterdir()):
             info(
-                f"Source package directory '{self.source_code_dir}' is already empty. Nothing to clear.")
+                f"Source package directory '{self.source_code_dir}' is already empty. Nothing to clear."
+            )
             return
 
         # If not empty and not forced, raise an error
@@ -227,14 +257,12 @@ class SourcePackageManager:
             )
 
         try:
-            info(
-                f"Deleting all contents in '{self.source_code_dir}'...")
+            info(f"Deleting all contents in '{self.source_code_dir}'...")
             shutil.rmtree(self.source_code_dir)
 
             # Re-create the directory after deletion to ensure it exists for future use
             ensure_dir(self.source_code_dir)
-            info(
-                f"Source package at '{self.source_code_dir}' cleared successfully!")
+            info(f"Source package at '{self.source_code_dir}' cleared successfully!")
         except OSError as e:
             raise SourcePackageManagerError(
                 f"Failed to clear source package directory '{self.source_code_dir}': {e}. "
@@ -242,6 +270,9 @@ class SourcePackageManager:
             )
         except Exception as e:
             critical(
-                f"An unexpected error occurred during source package clear: {e}", exc_info=True)
+                f"An unexpected error occurred during source package clear: {e}",
+                exc_info=True,
+            )
             raise SourcePackageManagerError(
-                f"An unexpected error occurred during source package clear: {e}")
+                f"An unexpected error occurred during source package clear: {e}"
+            )

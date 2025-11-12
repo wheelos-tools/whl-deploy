@@ -10,6 +10,7 @@ from whl_deploy.common import info, warning, error
 
 class ArchiveManagerError(Exception):
     """Custom exception for ArchiveManager specific errors."""
+
     pass
 
 
@@ -22,11 +23,13 @@ class ArchiveManager:
     def __init__(self):
         pass
 
-    def decompress(self,
-                   archive_path: Path,
-                   destination_path: Path,
-                   force_filter: Optional[str] = 'data',
-                   target_top_level_dir_name: Optional[str] = None) -> None:
+    def decompress(
+        self,
+        archive_path: Path,
+        destination_path: Path,
+        force_filter: Optional[str] = "data",
+        target_top_level_dir_name: Optional[str] = None,
+    ) -> None:
         """
         Decompresses an archive to a specified destination directory.
         Supports .tar.gz and .zip files.
@@ -47,16 +50,14 @@ class ArchiveManager:
         """
         info(f"Decompressing '{archive_path}' to '{destination_path}'...")
         if not archive_path.is_file():
-            raise ArchiveManagerError(
-                f"Archive file not found: {archive_path}")
+            raise ArchiveManagerError(f"Archive file not found: {archive_path}")
 
         # Ensure destination_path exists *before* extraction
         destination_path.mkdir(parents=True, exist_ok=True)
 
         # Record initial contents of destination_path (if any), to help identify newly extracted top-level dir.
         # This is a robust way to find what was newly added.
-        initial_contents_names = set(
-            p.name for p in destination_path.iterdir())
+        initial_contents_names = set(p.name for p in destination_path.iterdir())
 
         if tarfile.is_tarfile(archive_path):
             self._decompress_tar(archive_path, destination_path, force_filter)
@@ -70,11 +71,15 @@ class ArchiveManager:
         # Apply top-level directory renaming after successful decompression
         if target_top_level_dir_name:
             info(
-                f"Attempting to rename top-level directory to '{target_top_level_dir_name}'...")
+                f"Attempting to rename top-level directory to '{target_top_level_dir_name}'..."
+            )
 
             # Identify the newly extracted top-level items
             extracted_top_level_items = [
-                p for p in destination_path.iterdir() if p.name not in initial_contents_names]
+                p
+                for p in destination_path.iterdir()
+                if p.name not in initial_contents_names
+            ]
 
             if not extracted_top_level_items:
                 raise ArchiveManagerError(
@@ -84,7 +89,8 @@ class ArchiveManager:
 
             # Filter for directories among the newly extracted items
             extracted_top_level_dirs = [
-                p for p in extracted_top_level_items if p.is_dir()]
+                p for p in extracted_top_level_items if p.is_dir()
+            ]
 
             if len(extracted_top_level_dirs) == 1:
                 source_path = extracted_top_level_dirs[0]
@@ -100,14 +106,15 @@ class ArchiveManager:
 
                 try:
                     info(
-                        f"Renaming detected top-level directory '{old_name}' to '{target_top_level_dir_name}'...")
+                        f"Renaming detected top-level directory '{old_name}' to '{target_top_level_dir_name}'..."
+                    )
                     source_path.rename(target_path)
                     info("Top-level directory renaming completed successfully.")
                 except OSError as e:
-                    error(
-                        f"Failed to rename '{source_path}' to '{target_path}': {e}")
+                    error(f"Failed to rename '{source_path}' to '{target_path}': {e}")
                     raise ArchiveManagerError(
-                        f"Failed to rename top-level directory: {e}")
+                        f"Failed to rename top-level directory: {e}"
+                    )
             elif len(extracted_top_level_dirs) > 1:
                 # This means the archive extracted multiple directories at the top level
                 raise ArchiveManagerError(
@@ -118,7 +125,8 @@ class ArchiveManager:
             else:  # No directories, only files, or no new content that is a directory
                 # Check if there are any new files at top level
                 extracted_top_level_files = [
-                    p for p in extracted_top_level_items if p.is_file()]
+                    p for p in extracted_top_level_items if p.is_file()
+                ]
                 if extracted_top_level_files:
                     raise ArchiveManagerError(
                         f"Archive extracted files directly to '{destination_path}' (e.g., {extracted_top_level_files[0].name}). "
@@ -132,15 +140,19 @@ class ArchiveManager:
 
         info("Decompression completed successfully!")
 
-    def _decompress_tar(self, archive_path: Path, destination_path: Path, force_filter: Optional[str]) -> None:
+    def _decompress_tar(
+        self, archive_path: Path, destination_path: Path, force_filter: Optional[str]
+    ) -> None:
         """Internal helper for decompressing tar archives."""
         try:
             with tarfile.open(archive_path, "r:*", errorlevel=1) as tar:
-                if force_filter and hasattr(tarfile, 'data_filter'):
+                if force_filter and hasattr(tarfile, "data_filter"):
                     tar.extractall(path=destination_path, filter=force_filter)
                 elif force_filter:
-                    warning(f"Python version does not support tarfile filter='{force_filter}'. "
-                            "Proceeding without filter. Consider upgrading Python for security.")
+                    warning(
+                        f"Python version does not support tarfile filter='{force_filter}'. "
+                        "Proceeding without filter. Consider upgrading Python for security."
+                    )
                     tar.extractall(path=destination_path)
                 else:
                     tar.extractall(path=destination_path)
@@ -155,17 +167,20 @@ class ArchiveManager:
     def _decompress_zip(self, archive_path: Path, destination_path: Path) -> None:
         """Internal helper for decompressing zip archives."""
         try:
-            with zipfile.ZipFile(archive_path, 'r') as zf:
+            with zipfile.ZipFile(archive_path, "r") as zf:
                 for member in zf.infolist():
                     member_path = Path(member.filename)
-                    if member_path.is_absolute() or any('..' == part for part in member_path.parts):
+                    if member_path.is_absolute() or any(
+                        ".." == part for part in member_path.parts
+                    ):
                         warning(
-                            f"Skipping potentially malicious path in zip archive: {member.filename}")
+                            f"Skipping potentially malicious path in zip archive: {member.filename}"
+                        )
                         continue
                     attr = member.external_attr >> 16
                     if attr & stat.S_IFLNK == stat.S_IFLNK:
                         # Handle symbolic links
-                        link_target = zf.read(member.filename).decode('utf-8')
+                        link_target = zf.read(member.filename).decode("utf-8")
                         os.symlink(link_target, destination_path / member.filename)
                         continue
                     # regular file or directory
@@ -178,13 +193,21 @@ class ArchiveManager:
                         try:
                             os.chmod(extracted_path, mode)
                         except OSError as e:
-                            warning(r'Could not set permissions for'
-                                    f' {member.filename}: {e}')
+                            warning(
+                                r"Could not set permissions for"
+                                f" {member.filename}: {e}"
+                            )
         except zipfile.BadZipFile as e:
             raise ArchiveManagerError(
-                f"Failed to read zip archive '{archive_path}': {e}. Is it corrupted?")
+                f"Failed to read zip archive '{archive_path}': {e}. Is it corrupted?"
+            )
 
-    def compress(self, source_path: Path, output_path: Path, arcname_in_archive: Optional[str] = None) -> None:
+    def compress(
+        self,
+        source_path: Path,
+        output_path: Path,
+        arcname_in_archive: Optional[str] = None,
+    ) -> None:
         """
         Compresses a directory or file into an archive.
         Supports .tar, .tar.gz, .tar.bz2, and .zip formats based on output_path suffix.
@@ -207,29 +230,32 @@ class ArchiveManager:
 
         # Determine compression mode based on file extension
         mode = None
-        if output_path.suffix == '.zip':
-            archive_type = 'zip'
-        elif output_path.suffix == '.gz' and output_path.stem.endswith('.tar'):
-            archive_type = 'tar'
+        if output_path.suffix == ".zip":
+            archive_type = "zip"
+        elif output_path.suffix == ".gz" and output_path.stem.endswith(".tar"):
+            archive_type = "tar"
             mode = "w:gz"
-        elif output_path.suffix == '.bz2' and output_path.stem.endswith('.tar'):
-            archive_type = 'tar'
+        elif output_path.suffix == ".bz2" and output_path.stem.endswith(".tar"):
+            archive_type = "tar"
             mode = "w:bz2"
-        elif output_path.suffix == '.tar':
-            archive_type = 'tar'
+        elif output_path.suffix == ".tar":
+            archive_type = "tar"
             mode = "w"
         else:
             # Default to .tar.gz if suffix is not recognized
-            warning(f"Unsupported output archive format suffix for '{output_path.name}'. "
-                    f"Defaulting to '.tar.gz'.")
-            output_path = output_path.with_suffix(
-                '').with_suffix('.tar').with_suffix('.gz')
-            archive_type = 'tar'
+            warning(
+                f"Unsupported output archive format suffix for '{output_path.name}'. "
+                f"Defaulting to '.tar.gz'."
+            )
+            output_path = (
+                output_path.with_suffix("").with_suffix(".tar").with_suffix(".gz")
+            )
+            archive_type = "tar"
             mode = "w:gz"
 
         try:
-            if archive_type == 'zip':
-                with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            if archive_type == "zip":
+                with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
                     if source_path.is_dir():
                         for root, _, files in os.walk(source_path):
                             for file in files:
@@ -237,23 +263,22 @@ class ArchiveManager:
                                 # Calculate arcname relative to source_path
                                 # If arcname_in_archive is provided, prepend it
                                 rel_path = file_path.relative_to(source_path)
-                                final_arcname = Path(
-                                    arcname_in_archive or source_path.name) / rel_path
+                                final_arcname = (
+                                    Path(arcname_in_archive or source_path.name)
+                                    / rel_path
+                                )
                                 zf.write(file_path, arcname=str(final_arcname))
                     else:  # Single file
-                        final_arcname = Path(
-                            arcname_in_archive or source_path.name)
+                        final_arcname = Path(arcname_in_archive or source_path.name)
                         zf.write(source_path, arcname=str(final_arcname))
 
-            elif archive_type == 'tar':
+            elif archive_type == "tar":
                 with tarfile.open(output_path, mode) as tar:
                     # tar.add handles both files and directories recursively.
                     # arcname parameter controls the name inside the archive.
                     # This creates a single top-level directory in the archive.
-                    tar.add(source_path,
-                            arcname=arcname_in_archive or source_path.name)
+                    tar.add(source_path, arcname=arcname_in_archive or source_path.name)
 
             info("Compression completed successfully!")
         except Exception as e:
-            raise ArchiveManagerError(
-                f"Failed to compress '{source_path}': {e}")
+            raise ArchiveManagerError(f"Failed to compress '{source_path}': {e}")
