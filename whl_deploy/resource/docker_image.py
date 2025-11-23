@@ -3,22 +3,26 @@
 from pathlib import Path
 from typing import List, Optional, Union
 
-from whl_deploy.common import (
+from whl_deploy.utils.common import (
     execute_docker_command,
     CommandExecutionError,
-    info, warning, error, critical
+    info,
+    warning,
+    error,
+    critical,
 )
 
-from whl_deploy.file_loader import FileLoader, FileFetcherError
+from whl_deploy.utils.file_loader import FileLoader, FileFetcherError
 
 # --- Configuration Constants ---
-DEFAULT_IMAGE_NAME = "registry.baidubce.com/apolloauto/apollo:dev-x86_64-18.04-20221124_1708"
 DEFAULT_IMAGE_EXPORT_FILENAME = "docker_image.tar"
 
 
 class DockerImageError(Exception):
     """Custom exception for errors during Docker image operations."""
+
     pass
+
 
 # --- DockerImageManager Implementation ---
 
@@ -45,31 +49,40 @@ class DockerImageManager:
             info("Docker daemon is active.")
         except CommandExecutionError as e:
             stderr_output = e.stderr.lower() if e.stderr else ""
-            if "cannot connect to the docker daemon" in stderr_output or "permission denied" in stderr_output:
+            if (
+                "cannot connect to the docker daemon" in stderr_output
+                or "permission denied" in stderr_output
+            ):
                 critical_msg = (
                     "Docker daemon is not running or accessible. Please ensure:\n"
                     "  1. Docker Desktop/Engine is running.\n"
                     "  2. Your user has permissions to access the Docker daemon (e.g., added to 'docker' group).\n"
-                    f"Error details: {e.stderr.strip()}" if e.stderr else "No detailed error message."
+                    f"Error details: {e.stderr.strip()}"
+                    if e.stderr
+                    else "No detailed error message."
                 )
                 critical(critical_msg)
                 raise DockerImageError(critical_msg)
             else:
                 critical_msg = (
                     f"Failed to check Docker daemon status due to unexpected command error: {e.stderr.strip()}"
-                    if e.stderr else f"Command '{' '.join(e.cmd)}' failed with exit code {e.returncode}."
+                    if e.stderr
+                    else f"Command '{' '.join(e.cmd)}' failed with exit code {e.returncode}."
                 )
                 critical(critical_msg)
                 raise DockerImageError(critical_msg)
         except FileNotFoundError:
             critical(
-                "Docker command not found. Please ensure Docker is installed and in your system's PATH.")
+                "Docker command not found. Please ensure Docker is installed and in your system's PATH."
+            )
             raise DockerImageError(
                 "Docker command not found. Please ensure Docker is installed and in your PATH."
             )
         except Exception as e:
             critical(
-                f"An unexpected error occurred while checking Docker daemon status: {e}", exc_info=True)
+                f"An unexpected error occurred while checking Docker daemon status: {e}",
+                exc_info=True,
+            )
             raise DockerImageError(
                 f"An unexpected error occurred while checking Docker daemon status: {e}"
             )
@@ -86,7 +99,7 @@ class DockerImageManager:
                 ["inspect", "--format", "{{.Id}}", image_name_or_id],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
             return result.stdout.strip()
         except CommandExecutionError as e:
@@ -95,11 +108,14 @@ class DockerImageManager:
             # as the non-zero exit code already indicates non-existence or an issue.
             # We assume non-zero exit for inspect means image not found for this context.
             info(
-                f"Image '{image_name_or_id}' not found locally (inspect failed with exit code {e.returncode}).")
+                f"Image '{image_name_or_id}' not found locally (inspect failed with exit code {e.returncode})."
+            )
             return None
         except Exception as e:
             warning(
-                f"An unexpected error occurred while inspecting image '{image_name_or_id}': {e}", exc_info=True)
+                f"An unexpected error occurred while inspecting image '{image_name_or_id}': {e}",
+                exc_info=True,
+            )
             return None
 
     def _is_image_present(self, image_name: str) -> bool:
@@ -113,7 +129,11 @@ class DockerImageManager:
             info(f"Image '{image_name}' is not present.")
             return False
 
-    def save_images(self, image_name: str, output_filename: Union[str, Path] = DEFAULT_IMAGE_EXPORT_FILENAME) -> None:
+    def save_images(
+        self,
+        image_name: str,
+        output_filename: Union[str, Path] = DEFAULT_IMAGE_EXPORT_FILENAME,
+    ) -> None:
         """
         Saves a single Docker image to a .tar archive.
 
@@ -149,18 +169,26 @@ class DockerImageManager:
             # Docker save command directly to Path string
             # The docker command expects individual image names, not a list in one argument.
             execute_docker_command(
-                ["save", "-o", str(output_path), image_name], capture_output=False, check=True
+                ["save", "-o", str(output_path), image_name],
+                capture_output=False,
+                check=True,
             )
-            info(
-                f"Successfully saved image '{image_name}' to '{output_path}'.")
+            info(f"Successfully saved image '{image_name}' to '{output_path}'.")
         except CommandExecutionError as e:
             critical(
-                f"Failed to save Docker image: {e.stderr.strip()}" if e.stderr else str(e))
+                f"Failed to save Docker image: {e.stderr.strip()}"
+                if e.stderr
+                else str(e)
+            )
             raise DockerImageError(
-                f"Failed to save Docker image: {e.stderr.strip()}" if e.stderr else str(e))
+                f"Failed to save Docker image: {e.stderr.strip()}"
+                if e.stderr
+                else str(e)
+            )
         except Exception as e:
             critical(
-                f"An unexpected error occurred during image saving: {e}", exc_info=True)
+                f"An unexpected error occurred during image saving: {e}", exc_info=True
+            )
             raise DockerImageError(
                 f"An unexpected error occurred during image saving: {e}"
             )
@@ -184,8 +212,7 @@ class DockerImageManager:
             # If fetch fails for a non-existent local file, FileFetcherError will be raised.
             pass
         elif not resolved_input_path.is_file():
-            raise DockerImageError(
-                f"Input path '{resolved_input_path}' is not a file.")
+            raise DockerImageError(f"Input path '{resolved_input_path}' is not a file.")
 
         local_archive_path: Path  # Final path after fetching
 
@@ -196,7 +223,9 @@ class DockerImageManager:
 
             info(f"Loading Docker images from '{local_archive_path}'...")
             execute_docker_command(
-                ["load", "-i", str(local_archive_path)], capture_output=False, check=True
+                ["load", "-i", str(local_archive_path)],
+                capture_output=False,
+                check=True,
             )
             info(f"Successfully loaded images from '{local_archive_path}'.")
             info("You can verify loaded images by running 'docker images'.")
@@ -205,12 +234,19 @@ class DockerImageManager:
             raise DockerImageError(f"Failed to fetch image archive: {e}")
         except CommandExecutionError as e:
             critical(
-                f"Failed to load Docker images: {e.stderr.strip()}" if e.stderr else str(e))
+                f"Failed to load Docker images: {e.stderr.strip()}"
+                if e.stderr
+                else str(e)
+            )
             raise DockerImageError(
-                f"Failed to load Docker images: {e.stderr.strip()}" if e.stderr else str(e))
+                f"Failed to load Docker images: {e.stderr.strip()}"
+                if e.stderr
+                else str(e)
+            )
         except Exception as e:
             critical(
-                f"An unexpected error occurred during image loading: {e}", exc_info=True)
+                f"An unexpected error occurred during image loading: {e}", exc_info=True
+            )
             raise DockerImageError(
                 f"An unexpected error occurred during image loading: {e}"
             )
@@ -222,21 +258,30 @@ class DockerImageManager:
         info("Listing local Docker images...")
         try:
             self._check_docker_daemon_status()  # Ensure daemon is running before listing
-            execute_docker_command(
-                ["images"], capture_output=False, check=True)
+            execute_docker_command(["images"], capture_output=False, check=True)
             info("Docker images listed.")
         except CommandExecutionError as e:
             critical(
-                f"Failed to list Docker images: {e.stderr.strip()}" if e.stderr else str(e))
+                f"Failed to list Docker images: {e.stderr.strip()}"
+                if e.stderr
+                else str(e)
+            )
             raise DockerImageError(
-                f"Failed to list Docker images: {e.stderr.strip()}" if e.stderr else str(e))
-        except DockerImageError as e:  # Re-raise DockerImageError from _check_docker_daemon_status
+                f"Failed to list Docker images: {e.stderr.strip()}"
+                if e.stderr
+                else str(e)
+            )
+        except (
+            DockerImageError
+        ) as e:  # Re-raise DockerImageError from _check_docker_daemon_status
             raise e
         except Exception as e:
             critical(
-                f"An unexpected error occurred during image listing: {e}", exc_info=True)
+                f"An unexpected error occurred during image listing: {e}", exc_info=True
+            )
             raise DockerImageError(
-                f"An unexpected error occurred during image listing: {e}")
+                f"An unexpected error occurred during image listing: {e}"
+            )
 
     def get_local_image_tags(self) -> List[str]:
         """
@@ -250,14 +295,20 @@ class DockerImageManager:
                 ["images", "--format", "{{.Repository}}:{{.Tag}}"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
-            tags = [line.strip() for line in result.stdout.splitlines() if line.strip() and "<none>" not in line]
+            tags = [
+                line.strip()
+                for line in result.stdout.splitlines()
+                if line.strip() and "<none>" not in line
+            ]
             info(f"Found {len(tags)} local image tags.")
             return tags
         except CommandExecutionError as e:
             warning(f"Failed to list local Docker image tags: {e.stderr.strip()}")
             return []
         except Exception as e:
-            warning(f"An unexpected error occurred while fetching local image tags: {e}")
+            warning(
+                f"An unexpected error occurred while fetching local image tags: {e}"
+            )
             return []

@@ -1,6 +1,7 @@
 import requests
 import socket
 
+
 def can_access_github():
     """
     Checks if https://github.com/ is accessible.

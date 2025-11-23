@@ -62,10 +62,7 @@ In some cases, you might want to configure the host environment step-by-step:
 whl-deploy setup docker
 
 # Only install and configure NVIDIA Container Toolkit
-whl-deploy setup nvidia
-
-# Only perform system-level host configurations (e.g., kernel parameters, user groups)
-whl-deploy setup host
+whl-deploy setup nvidia_toolkit
 ```
 
 #### 3.2. Resource Import & Export - Category Management
@@ -117,7 +114,14 @@ Manage Apollo's core container images.
 
 **d. High-Definition Maps (HD Maps) (TODO - To Be Implemented)**
 
-*   `whl-deploy import hd_maps --input=...`
+*
+```
+# all maps
+whl-deploy import maps -i="map_data.tar.gz"
+
+# san_mateo only
+whl-deploy import maps -i="your_map_dir/maps/san_mateo.tar.gz"
+```
 *   `whl-deploy export hd_maps --output=...`
 
 **e. AI Models (TODO - To Be Implemented)**

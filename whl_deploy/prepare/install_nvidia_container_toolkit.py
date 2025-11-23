@@ -4,9 +4,15 @@ import os
 import platform
 import re
 from pathlib import Path
-from whl_deploy.common import (get_os_info, execute_command,
-                               CommandExecutionError, info, warning, error,
-                               critical)
+from whl_deploy.utils.common import (
+    get_os_info,
+    execute_command,
+    CommandExecutionError,
+    info,
+    warning,
+    error,
+    critical,
+)
 
 # --- Configuration Constants ---
 NVIDIA_TOOLKIT_KEYRING = "/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
@@ -28,13 +34,11 @@ def get_repo_base_url(mirror_region: str) -> str:
     Determines the base URL for the NVIDIA Container Toolkit repository
     based on whether a China mirror should be used.
     """
-    if mirror_region == 'cn':
-        info(f"Using China mirror repository: {USTC_NVIDIA_REPO_BASE_URL}")
+    if mirror_region == "cn":
+        info(f"NVIDIA docker repository: {USTC_NVIDIA_REPO_BASE_URL}")
         return USTC_NVIDIA_REPO_BASE_URL
     else:
-        info(
-            f"Using official NVIDIA repository: {OFFICIAL_NVIDIA_REPO_BASE_URL}"
-        )
+        info(f"NVIDIA docker repository: {OFFICIAL_NVIDIA_REPO_BASE_URL}")
         return OFFICIAL_NVIDIA_REPO_BASE_URL
 
 
@@ -42,8 +46,8 @@ def get_repo_base_url(mirror_region: str) -> str:
 class NvidiaToolkitManager:
     """Manages NVIDIA Container Toolkit installation and uninstallation on Ubuntu systems."""
 
-    def __init__(self, mirror_region: str):
-        self.os_info = get_os_info()
+    def __init__(self, mirror_region: str, os_info):
+        self.os_info = os_info
         self.arch = platform.machine()
         self.arch_alias = self._get_arch_alias()
         # Initialize toolkit version, will be dynamically fetched during installation
@@ -75,9 +79,7 @@ class NvidiaToolkitManager:
             # First, ensure apt-cache is updated to reflect latest packages
             # This 'apt update' is crucial for apt-cache madison to show current versions.
             # This 'apt update' is called after adding the repository, so it will consider the new repo.
-            execute_command(["apt-get", "update"],
-                            use_sudo=True,
-                            capture_output=False)
+            execute_command(["apt-get", "update"], use_sudo=True, capture_output=False)
 
             # apt-cache madison lists available versions. The first one is usually the latest.
             result = execute_command(
@@ -85,12 +87,14 @@ class NvidiaToolkitManager:
                 use_sudo=False,
                 check=True,
                 capture_output=True,
-                text=True).stdout
+                text=True,
+            ).stdout
 
             # Regex to find the version number. Matches 'toolkit | VERSION | ...'
             # Using re.DOTALL to allow '.' to match newlines if any unexpected format.
-            match = re.search(r"nvidia-container-toolkit \| (\S+?) \|", result,
-                              re.DOTALL)
+            match = re.search(
+                r"nvidia-container-toolkit \| (\S+?) \|", result, re.DOTALL
+            )
             if match:
                 latest_version = match.group(1).strip()
                 info(
@@ -117,7 +121,7 @@ class NvidiaToolkitManager:
         """Checks pre-conditions necessary for NVIDIA Container Toolkit installation."""
         info("Checking NVIDIA Container Toolkit pre-conditions...")
 
-        if self.os_info.get('id') != "ubuntu":
+        if self.os_info.get("id") != "ubuntu":
             raise RuntimeError(
                 f"Unsupported operating system: {self.os_info.get('id')}. This script is designed for Ubuntu."
             )
@@ -130,20 +134,21 @@ class NvidiaToolkitManager:
         # Check if Docker is installed and running (Critical Dependency)
         info("Verifying Docker installation and status...")
         try:
-            execute_command(["docker", "info"],
-                            check=True,
-                            capture_output=False,
-                            use_sudo=True)
+            execute_command(
+                ["docker", "info"], check=True, capture_output=False, use_sudo=True
+            )
         except (FileNotFoundError, CommandExecutionError):
             raise RuntimeError(
                 "Docker is not installed or not in PATH. NVIDIA Container Toolkit explicitly depends on Docker. Please install Docker first."
             )
 
         try:
-            execute_command(["systemctl", "is-active", "--quiet", "docker"],
-                            check=True,
-                            capture_output=False,
-                            use_sudo=False)
+            execute_command(
+                ["systemctl", "is-active", "--quiet", "docker"],
+                check=True,
+                capture_output=False,
+                use_sudo=False,
+            )
         except CommandExecutionError:
             raise RuntimeError(
                 "Docker service is not running. NVIDIA Container Toolkit requires Docker service to be active. Please start Docker."
@@ -154,10 +159,9 @@ class NvidiaToolkitManager:
             # Check if NVIDIA driver is installed (Indirect Dependency - Toolkit needs drivers)
             info("Verifying NVIDIA GPU driver installation...")
             try:
-                execute_command(["nvidia-smi"],
-                                check=True,
-                                capture_output=False,
-                                use_sudo=False)
+                execute_command(
+                    ["nvidia-smi"], check=True, capture_output=False, use_sudo=False
+                )
             except (FileNotFoundError, CommandExecutionError):
                 raise RuntimeError(
                     "NVIDIA GPU driver (nvidia-smi command) not found. NVIDIA Container Toolkit requires NVIDIA drivers to function. Please install NVIDIA GPU drivers first."
@@ -211,10 +215,7 @@ class NvidiaToolkitManager:
                 try:
                     # Execute nvidia-ctk with sudo by default (as per common.py's execute_command)
                     execute_command(
-                        [
-                            "nvidia-ctk", "runtime", "configure",
-                            "--runtime=docker"
-                        ],
+                        ["nvidia-ctk", "runtime", "configure", "--runtime=docker"],
                         use_sudo=True,
                         check=True,
                         capture_output=False,
@@ -249,8 +250,14 @@ class NvidiaToolkitManager:
         )
         execute_command(
             [
-                "apt-get", "install", "-y", "apt-transport-https",
-                "ca-certificates", "curl", "gnupg", "lsb-release"
+                "apt-get",
+                "install",
+                "-y",
+                "apt-transport-https",
+                "ca-certificates",
+                "curl",
+                "gnupg",
+                "lsb-release",
             ],
             use_sudo=True,
             capture_output=False,
@@ -259,9 +266,7 @@ class NvidiaToolkitManager:
 
     def _setup_nvidia_toolkit_repo_and_install(self) -> None:
         """Configures the NVIDIA Container Toolkit repository and installs packages."""
-        info(
-            "Configuring production repository for NVIDIA Container Toolkit..."
-        )
+        info("Configuring production repository for NVIDIA Container Toolkit...")
 
         # Ensure keyrings directory exists (using pathlib for mkdir)
         Path("/usr/share/keyrings").mkdir(parents=True, exist_ok=True)
@@ -286,9 +291,7 @@ class NvidiaToolkitManager:
             capture_output=False,
             input_data=curl_result.stdout,
         )
-        info(
-            f"NVIDIA Container Toolkit GPG key added to {NVIDIA_TOOLKIT_KEYRING}."
-        )
+        info(f"NVIDIA Container Toolkit GPG key added to {NVIDIA_TOOLKIT_KEYRING}.")
 
         # Add repository list
         info(f"Downloading repository list from {repo_list_url}...")
@@ -303,11 +306,11 @@ class NvidiaToolkitManager:
         # Apply sed-like replacement to add signed-by and handle mirror URL
         # The original list might contain "nvidia.github.io" which needs to be replaced if using mirror.
         modified_repo_list_content = curl_list_result.stdout
-        if self.mirror_region == 'cn':
+        if self.mirror_region == "cn":
             # Replace the official domain with the mirror domain in the list content
             modified_repo_list_content = modified_repo_list_content.replace(
-                "nvidia.github.io",
-                "mirrors.ustc.edu.cn/nvidia-container-toolkit")
+                "nvidia.github.io", "mirrors.ustc.edu.cn/nvidia-container-toolkit"
+            )
             info(
                 "Replaced official repository URL with China mirror URL in the list content."
             )
@@ -316,7 +319,8 @@ class NvidiaToolkitManager:
         modified_repo_list_content = re.sub(
             r"deb https://",
             f"deb [signed-by={NVIDIA_TOOLKIT_KEYRING}] https://",
-            modified_repo_list_content)
+            modified_repo_list_content,
+        )
 
         # Write to file using tee
         execute_command(
@@ -324,7 +328,7 @@ class NvidiaToolkitManager:
             use_sudo=True,
             check=True,
             capture_output=False,
-            input_data=modified_repo_list_content.encode('utf-8'),
+            input_data=modified_repo_list_content.encode("utf-8"),
         )
         info(
             f"NVIDIA Container Toolkit stable repository added to {NVIDIA_TOOLKIT_LIST}."
@@ -351,11 +355,13 @@ class NvidiaToolkitManager:
         )
         execute_command(
             [
-                "apt-get", "install", "-y",
+                "apt-get",
+                "install",
+                "-y",
                 f"nvidia-container-toolkit={self.toolkit_version}",
                 f"nvidia-container-toolkit-base={self.toolkit_version}",
                 f"libnvidia-container-tools={self.toolkit_version}",
-                f"libnvidia-container1={self.toolkit_version}"
+                f"libnvidia-container1={self.toolkit_version}",
             ],
             use_sudo=True,
             capture_output=False,
@@ -397,9 +403,7 @@ class NvidiaToolkitManager:
             self._setup_nvidia_toolkit_repo_and_install()
             self._configure_docker_runtime_and_restart()
 
-            info(
-                "NVIDIA Container Toolkit installation completed successfully!"
-            )
+            info("NVIDIA Container Toolkit installation completed successfully!")
             info(
                 "You can verify the installation by running: 'docker run --rm --gpus all ubuntu nvidia-smi'"
             )
@@ -407,8 +411,12 @@ class NvidiaToolkitManager:
                 "If the first run fails, it may need initialization - please try again."
             )
             return 0
-        except (CommandExecutionError, FileNotFoundError, PermissionError,
-                RuntimeError) as e:
+        except (
+            CommandExecutionError,
+            FileNotFoundError,
+            PermissionError,
+            RuntimeError,
+        ) as e:
             error(f"NVIDIA Container Toolkit installation failed: {e}")
             # Only print stdout/stderr if they exist for CommandExecutionError
             if isinstance(e, CommandExecutionError) and (e.stdout or e.stderr):
@@ -427,7 +435,7 @@ class NvidiaToolkitManager:
         info("Starting NVIDIA Container Toolkit uninstallation process...")
         try:
             # Re-check pre-conditions for sudo and OS type, not other Docker/NVIDIA deps
-            if self.os_info.get('id') != "ubuntu":
+            if self.os_info.get("id") != "ubuntu":
                 raise RuntimeError(
                     f"Unsupported operating system: {self.os_info.get('id')}. This script is designed for Ubuntu."
                 )
@@ -437,8 +445,11 @@ class NvidiaToolkitManager:
                 # Directly attempt to unconfigure using nvidia-ctk
                 execute_command(
                     [
-                        "nvidia-ctk", "runtime", "configure",
-                        "--runtime=docker", "--unconfigure"
+                        "nvidia-ctk",
+                        "runtime",
+                        "configure",
+                        "--runtime=docker",
+                        "--unconfigure",
                     ],
                     use_sudo=True,
                     capture_output=False,
@@ -447,14 +458,16 @@ class NvidiaToolkitManager:
             except CommandExecutionError as e:
                 # Catch specific errors for old nvidia-ctk versions or other issues
                 error_msg = str(e).lower()
-                if "unknown flag" in error_msg or "unrecognized arguments" in error_msg or "error: unknown command" in error_msg:
+                if (
+                    "unknown flag" in error_msg
+                    or "unrecognized arguments" in error_msg
+                    or "error: unknown command" in error_msg
+                ):
                     warning(
                         "nvidia-ctk command failed, possibly due to an old version not supporting '--unconfigure'."
                     )
                 else:
-                    warning(
-                        f"Failed to unconfigure Docker runtime automatically: {e}"
-                    )
+                    warning(f"Failed to unconfigure Docker runtime automatically: {e}")
 
                 error(
                     "Please manually remove 'nvidia' runtime from /etc/docker/daemon.json if it exists."
@@ -481,13 +494,18 @@ class NvidiaToolkitManager:
             try:
                 execute_command(
                     [
-                        "apt-get", "purge", "-y", "nvidia-container-toolkit",
+                        "apt-get",
+                        "purge",
+                        "-y",
+                        "nvidia-container-toolkit",
                         "nvidia-container-toolkit-base",
-                        "libnvidia-container-tools", "libnvidia-container1"
+                        "libnvidia-container-tools",
+                        "libnvidia-container1",
                     ],
                     use_sudo=True,
                     check=True,  # check=True for critical purge operation
-                    capture_output=False)
+                    capture_output=False,
+                )
                 execute_command(
                     ["apt-get", "autoremove", "-y", "--purge"],
                     use_sudo=True,
@@ -496,9 +514,7 @@ class NvidiaToolkitManager:
                 )
                 info("NVIDIA Container Toolkit-related packages removed.")
             except CommandExecutionError as e:
-                warning(
-                    f"Failed to remove some NVIDIA Container Toolkit packages: {e}"
-                )
+                warning(f"Failed to remove some NVIDIA Container Toolkit packages: {e}")
                 warning(
                     "Manual intervention might be needed to fully clean up packages."
                 )
@@ -511,9 +527,7 @@ class NvidiaToolkitManager:
             if keyring_path.exists():
                 try:
                     keyring_path.unlink()  # Using pathlib's unlink
-                    info(
-                        f"Removed NVIDIA Container Toolkit GPG key: {keyring_path}."
-                    )
+                    info(f"Removed NVIDIA Container Toolkit GPG key: {keyring_path}.")
                 except OSError as e:  # Catch OSError for file operations
                     warning(f"Failed to remove {keyring_path}: {e}")
 
@@ -542,8 +556,12 @@ class NvidiaToolkitManager:
 
             info("NVIDIA Container Toolkit uninstallation completed.")
             return 0
-        except (CommandExecutionError, FileNotFoundError, PermissionError,
-                RuntimeError) as e:
+        except (
+            CommandExecutionError,
+            FileNotFoundError,
+            PermissionError,
+            RuntimeError,
+        ) as e:
             error(f"NVIDIA Container Toolkit uninstallation failed: {e}")
             return 1
         except Exception as e:
