@@ -26,7 +26,6 @@ class DockerManager:
         """Initializes the manager, determines OS, architecture, and mirror_region settings."""
         self.os_info = os_info
         self.arch = platform.machine()
-        self.arch_alias = self._get_arch_alias()
         self.mirror_region = mirror_region.lower()
 
     def _get_arch_alias(self) -> str:
@@ -45,6 +44,7 @@ class DockerManager:
             raise RuntimeError(
                 f"Unsupported OS: {self.os_info.get('id')}. This script is for Ubuntu."
             )
+        self.arch_alias = self._get_arch_alias()
         info("All pre-conditions met.")
 
     def _is_docker_already_functional(self) -> bool:
@@ -108,12 +108,15 @@ class DockerManager:
         info("Setting up Docker stable repository...")
         repo_line = (
             f"deb [arch={self.arch_alias} signed-by={DOCKER_GPG_KEY_PATH}] "
-            f"{repo_base_url} {self.os_info['codename']} stable\n")
-        execute_command(["tee", str(DOCKER_REPO_LIST_PATH)],
-                        use_sudo=True,
-                        check=True,
-                        capture_output=True,
-                        input_data=repo_line)
+            f"{repo_base_url} {self.os_info['codename']} stable\n"
+        )
+        execute_command(
+            ["tee", str(DOCKER_REPO_LIST_PATH)],
+            use_sudo=True,
+            check=True,
+            capture_output=True,
+            input_data=repo_line,
+        )
         info(f"Docker repository configured at {DOCKER_REPO_LIST_PATH}.")
 
         info("Updating apt package list with new repository...")

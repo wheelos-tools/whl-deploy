@@ -35,6 +35,7 @@ class Config:
         self.mirror_region = None
 
         self.workspace = Path().cwd
+        self.source_code_url = "https://gitee.com/daohu527/apollo-lite.git"
 
 
 # Create a global config instance

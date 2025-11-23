@@ -29,150 +29,134 @@ class ArchiveManager:
         archive_path: Path,
         destination_path: Path,
         force_filter: Optional[str] = None,
-        prefix_to_remove: Optional[Path] = None,
         target_top_level_dir_name: Optional[str] = None,
     ) -> None:
         """
-        Decompresses an archive to a specified destination directory.
-        Supports .tar.gz and .zip files.
-
-        Args:
-            archive_path: Path to the archive file to decompress.
-            destination_path: Path to the directory where contents will be extracted.
-            force_filter: Optional filter to apply during extraction for tar archives.
-            target_top_level_dir_name: Optional new name for the *single* top-level directory found
-                                      after decompression.
-            prefix_to_remove: If specified, this prefix will be removed from the
-                              paths of extracted contents.
-
-        Raises:
-            ArchiveManagerError: If the archive is not valid, extraction fails,
-                                or automatic renaming of the directory is not possible.
+        Decompress an archive or copy a directory to destination.
+        Automatically removes the archive's top-level directory if present.
+        Preserves executable permissions.
         """
         info(f"Decompressing '{archive_path}' to '{destination_path}'...")
         destination_path.mkdir(parents=True, exist_ok=True)
 
-        if archive_path.is_dir():
-            info(f"Archive path '{archive_path}' is a directory -- using direct copy mode")
-            try:
-                shutil.copytree(archive_path, destination_path, dirs_exist_ok=True, symlinks=True)
-            except Exception as e:
-                raise ArchiveManagerError(f"Failed to copy directory '{archive_path}' to '{destination_path}': {e}")
-        elif not archive_path.is_file():
-            raise ArchiveManagerError(f"Archive file not found: {archive_path}")
+        # Final target directory
+        if target_top_level_dir_name:
+            final_destination = destination_path / target_top_level_dir_name
+            final_destination.mkdir(parents=True, exist_ok=True)
         else:
-            # Ensure the destination directory exists
-            destination_path.mkdir(parents=True, exist_ok=True)
+            final_destination = destination_path
 
-            initial_contents_names = set(p.name for p in destination_path.iterdir())
+        # Custom copy function, retaining user-executable permissions.
+        def copy_with_user_exec(src, dst):
+            shutil.copy2(src, dst)
+            st = os.stat(dst)
+            os.chmod(dst, st.st_mode | stat.S_IXUSR)
+
+        if archive_path.is_dir():
+            # Copy the directory directly
+            try:
+                shutil.copytree(
+                    archive_path,
+                    final_destination,
+                    dirs_exist_ok=True,
+                    symlinks=True,
+                    copy_function=copy_with_user_exec,
+                )
+            except Exception as e:
+                raise ArchiveManagerError(
+                    f"Failed to copy directory '{archive_path}': {e}"
+                )
+        elif archive_path.is_file():
+            prefix_to_remove = None
 
             if tarfile.is_tarfile(archive_path):
-                self._decompress_tar(archive_path, destination_path, force_filter, prefix_to_remove)
+                # Automatically detect top-level directory
+                with tarfile.open(archive_path, "r") as tar:
+                    top_level_dirs = {
+                        Path(m.name).parts[0]
+                        for m in tar.getmembers()
+                        if m.name.strip()
+                    }
+                    if len(top_level_dirs) == 1:
+                        prefix_to_remove = Path(top_level_dirs.pop())
+                self._decompress_tar(
+                    archive_path, final_destination, force_filter, prefix_to_remove
+                )
             elif zipfile.is_zipfile(archive_path):
-                self._decompress_zip(archive_path, destination_path, prefix_to_remove)
+                with zipfile.ZipFile(archive_path, "r") as zip_ref:
+                    top_level_dirs = {
+                        Path(m).parts[0] for m in zip_ref.namelist() if m.strip()
+                    }
+                    if len(top_level_dirs) == 1:
+                        prefix_to_remove = Path(top_level_dirs.pop())
+                self._decompress_zip(archive_path, final_destination, prefix_to_remove)
             else:
-                raise ArchiveManagerError(f"'{archive_path.name}' is not a recognized archive format.")
+                raise ArchiveManagerError(f"Unsupported archive format: {archive_path}")
+        else:
+            raise ArchiveManagerError(f"Archive not found: {archive_path}")
 
-            # Handle top-level directory renaming if specified
-            if target_top_level_dir_name:
-                self._rename_top_level_directory(destination_path, initial_contents_names, target_top_level_dir_name, prefix_to_remove)
+        print("Decompression completed successfully!")
 
-        info("Decompression completed successfully!")
-
-    def _decompress_tar(self, archive_path: Path, destination_path: Path, force_filter: Optional[str], prefix_to_remove: Optional[Path]) -> None:
-        """Decompress a tar file, handling prefix removal."""
-        debug(f"Extracting: {archive_path} to {destination_path}")
-
+    def _decompress_tar(
+        self,
+        archive_path: Path,
+        destination_path: Path,
+        force_filter: Optional[str],
+        prefix_to_remove: Optional[Path],
+    ) -> None:
         with tarfile.open(archive_path, "r") as tar:
             for member in tar.getmembers():
-                # Check if we should apply the force_filter
                 if force_filter and force_filter not in member.name:
-                    debug(f"Skipping: {member.name} due to filter")
-                    continue  # Skip this member if it does not match the filter
-
-                # Determine the arcname and the destination to remove the specified prefix if provided
+                    continue
                 member_path = Path(member.name)
                 if prefix_to_remove:
-                    # Calculate arcname by removing the prefix
-                    arcname = member_path.relative_to(prefix_to_remove) if member_path.is_relative_to(prefix_to_remove) else member_path
+                    try:
+                        arcname = member_path.relative_to(prefix_to_remove)
+                    except ValueError:
+                        arcname = member_path
                 else:
                     arcname = member_path
-
-                # Full extraction path
                 full_path = destination_path / arcname
-
-                # Create directories if they don't exist
-                if not full_path.parent.exists():
+                if member.isdir():
+                    full_path.mkdir(parents=True, exist_ok=True)
+                else:
                     full_path.parent.mkdir(parents=True, exist_ok=True)
+                    tar.extract(member, path=destination_path)
+                    extracted_path = destination_path / member.name
+                    if extracted_path != full_path:
+                        shutil.move(str(extracted_path), str(full_path))
+                    if full_path.is_file():
+                        st = os.stat(full_path)
+                        os.chmod(full_path, st.st_mode | stat.S_IXUSR)
 
-                debug(f"Extracting: {member.name} to {full_path}")
-
-                try:
-                    if member.issym() or member.islnk():
-                        tar.extract(member, path=destination_path)  # Extract symlinks and hard links
-                    else:
-                        tar.extract(member, path=destination_path)
-
-                    # Optionally move to correct path if needed
-                    if arcname != member_path and (destination_path / member.name).exists():
-                        debug(f"Moving extracted file from {destination_path / member.name} to {full_path}")
-                        shutil.move(destination_path / member.name, full_path)
-
-                except Exception as e:
-                    print(f"Error extracting {member.name}: {str(e)}")
-
-    def _decompress_zip(self, archive_path: Path, destination_path: Path, prefix_to_remove: Optional[Path]) -> None:
-        """Decompress a zip file, handling prefix removal."""
-        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+    def _decompress_zip(
+        self,
+        archive_path: Path,
+        destination_path: Path,
+        prefix_to_remove: Optional[Path],
+    ) -> None:
+        with zipfile.ZipFile(archive_path, "r") as zip_ref:
             for member in zip_ref.namelist():
-                # Determine the arcname by removing the prefix if provided
                 member_path = Path(member)
                 if prefix_to_remove:
-                    arcname = member_path.relative_to(prefix_to_remove) if member_path.is_relative_to(prefix_to_remove) else member_path
+                    try:
+                        arcname = member_path.relative_to(prefix_to_remove)
+                    except ValueError:
+                        arcname = member_path
                 else:
                     arcname = member_path
-
-                zip_ref.extract(member, destination_path)
-                # Rename extracted file or directory to the correct path
-                if arcname != member_path:
-                    shutil.move(destination_path / member, destination_path / arcname)
-
-    def _rename_top_level_directory(
-        self,
-        destination_path: Path,
-        initial_contents_names: set,
-        target_top_level_dir_name: str,
-        prefix_to_remove: Optional[Path]
-    ) -> None:
-        """Renames the top-level directory in the destination path if possible."""
-        extracted_top_level_items = [
-            p for p in destination_path.iterdir() if p.name not in initial_contents_names
-        ]
-
-        if not extracted_top_level_items:
-            raise ArchiveManagerError("No new content was extracted. Cannot perform top-level directory rename.")
-
-        # Filter directories
-        extracted_top_level_dirs = [p for p in extracted_top_level_items if p.is_dir()]
-
-        if len(extracted_top_level_dirs) == 1:
-            source_path = extracted_top_level_dirs[0]
-            target_path = destination_path / target_top_level_dir_name
-
-            if target_path.exists() and target_path != source_path:
-                raise ArchiveManagerError(f"Target path '{target_path}' already exists and cannot be renamed.")
-
-            try:
-                info(f"Renaming directory '{source_path.name}' to '{target_top_level_dir_name}'...")
-                source_path.rename(target_path)
-                info("Top-level directory renamed successfully.")
-            except OSError as e:
-                raise ArchiveManagerError(f"Failed to rename '{source_path}' to '{target_path}': {e}")
-
-        elif len(extracted_top_level_dirs) > 1:
-            raise ArchiveManagerError("Multiple top-level directories detected. Unable to rename.")
-        else:
-            raise ArchiveManagerError("No single top-level directory found to rename.")
+                full_path = destination_path / arcname
+                if member.endswith("/"):
+                    full_path.mkdir(parents=True, exist_ok=True)
+                else:
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    zip_ref.extract(member, destination_path)
+                    extracted_path = destination_path / member
+                    if extracted_path != full_path:
+                        shutil.move(str(extracted_path), str(full_path))
+                    if full_path.is_file():
+                        st = os.stat(full_path)
+                        os.chmod(full_path, st.st_mode | stat.S_IXUSR)
 
     def compress(
         self,
@@ -196,7 +180,9 @@ class ArchiveManager:
         Raises:
             ArchiveManagerError: If compression fails.
         """
-        info(f"Compressing '{source_path}' to '{output_path}', prefix remove :{prefix_to_remove}...")
+        info(
+            f"Compressing '{source_path}' to '{output_path}', prefix remove :{prefix_to_remove}..."
+        )
         if not source_path.exists():
             raise ArchiveManagerError(f"Source path not found: {source_path}")
 
@@ -240,7 +226,8 @@ class ArchiveManager:
                                     rel_path = file_path.relative_to(source_path)
 
                                 final_arcname = (
-                                    Path(arcname_in_archive or source_path.name) / rel_path
+                                    Path(arcname_in_archive or source_path.name)
+                                    / rel_path
                                 )
                                 zf.write(file_path, arcname=str(final_arcname))
 
@@ -261,7 +248,11 @@ class ArchiveManager:
 
                             tar.add(item_path, arcname=arcname)
                     else:  # Single file
-                        arcname = source_path.relative_to(prefix_to_remove) if prefix_to_remove else source_path.name
+                        arcname = (
+                            source_path.relative_to(prefix_to_remove)
+                            if prefix_to_remove
+                            else source_path.name
+                        )
                         tar.add(source_path, arcname=arcname)
 
         except Exception as e:

@@ -49,7 +49,6 @@ class NvidiaToolkitManager:
     def __init__(self, mirror_region: str, os_info):
         self.os_info = os_info
         self.arch = platform.machine()
-        self.arch_alias = self._get_arch_alias()
         # Initialize toolkit version, will be dynamically fetched during installation
         self.toolkit_version = DEFAULT_NVIDIA_CONTAINER_TOOLKIT_VERSION
         self.mirror_region = mirror_region.lower()
@@ -127,6 +126,8 @@ class NvidiaToolkitManager:
             )
 
         info(f"Detected supported OS: Ubuntu ({self.os_info['codename']}).")
+
+        self.arch_alias = self._get_arch_alias()
         info(
             f"Detected supported architecture: {self.arch} (alias: {self.arch_alias})."
         )

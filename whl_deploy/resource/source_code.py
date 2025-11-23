@@ -162,11 +162,7 @@ class SourcePackageManager:
             )
 
             # Note: Using target_directory.parent does not include `apollo`
-            self.archive_manager.decompress(
-                local_archive_path,
-                target_directory.parent,
-                target_top_level_dir_name=DEFAULT_SOURCE_DIR.name,
-            )
+            self.archive_manager.decompress(local_archive_path, target_directory)
 
             info(f"Source code imported successfully to '{target_directory}'!")
         except FileFetcherError as e:

@@ -7,6 +7,7 @@ from whl_deploy.orchestrator import HostSetupOrchestrator, OrchestratorError
 from whl_deploy.utils.common import info, error, critical
 from whl_deploy.utils.prompt import show_welcome
 from whl_deploy.host.env_manager import HostEnvManager
+from whl_deploy.host.config import config
 
 
 def configure_parser() -> argparse.ArgumentParser:
@@ -75,18 +76,33 @@ def configure_parser() -> argparse.ArgumentParser:
         help='Assume "yes" to all prompts (non-interactive).',
     )
 
+    # Resource-specific argument parsing
     for resource in ["source_code", "docker_image", "maps", "models", "cache"]:
         p = import_subparsers.add_parser(
             resource, help=f"Import {resource.replace('_', ' ')}"
         )
+
+        # Conditional input argument handling
+        if resource == "source_code":
+            p.add_argument(
+                "-i",
+                "--input",
+                type=str,
+                default=config.source_code_url,
+                help="Path to the source code package)",
+            )
+        else:
+            p.add_argument(
+                "-i",
+                "--input",
+                type=str,
+                required=True,
+                help="Path to the resource package",
+            )
+
         p.add_argument(
-            "-i",
-            "--input",
-            type=str,
-            required=True,
-            help="Path to the resource package",
+            "-o", "--output", type=str, help="Target directory for extraction"
         )
-        p.add_argument("-o", "--output", type=str, help="Target directory for extraction")
         p.add_argument(
             "--noforce",
             action="store_false",
