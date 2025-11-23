@@ -108,15 +108,12 @@ class DockerManager:
         info("Setting up Docker stable repository...")
         repo_line = (
             f"deb [arch={self.arch_alias} signed-by={DOCKER_GPG_KEY_PATH}] "
-            f"{repo_base_url} {self.os_info['codename']} stable\n"
-        )
-        execute_command(
-            ["tee", str(DOCKER_REPO_LIST_PATH)],
-            use_sudo=True,
-            check=True,
-            capture_output=True,
-            input_data=repo_line,
-        )
+            f"{repo_base_url} {self.os_info['codename']} stable\n")
+        execute_command(["tee", str(DOCKER_REPO_LIST_PATH)],
+                        use_sudo=True,
+                        check=True,
+                        capture_output=True,
+                        input_data=repo_line)
         info(f"Docker repository configured at {DOCKER_REPO_LIST_PATH}.")
 
         info("Updating apt package list with new repository...")
