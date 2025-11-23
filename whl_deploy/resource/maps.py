@@ -6,13 +6,15 @@ import shutil
 from pathlib import Path
 from typing import Optional, Union
 
-from whl_deploy.common import info, warning, error, critical
-from whl_deploy.file_loader import FileLoader, FileFetcherError
-from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
-
+from whl_deploy.utils.common import info, warning, error, critical
+from whl_deploy.utils.file_loader import FileLoader, FileFetcherError
+from whl_deploy.utils.archive_manager import ArchiveManager, ArchiveManagerError
+from whl_deploy.host.config import WORKSPACE
 
 # --- Configuration Constants ---
-DEFAULT_MAP_IMPORT_DIR = Path("modules/map/data")
+MAP_IMPORT_DIR = "modules/map/data"
+DEFAULT_MAP_IMPORT_DIR = WORKSPACE / MAP_IMPORT_DIR
+
 # Still recommend .tar.gz as default
 DEFAULT_MAP_EXPORT_FILENAME = "map_data.tar.gz"
 

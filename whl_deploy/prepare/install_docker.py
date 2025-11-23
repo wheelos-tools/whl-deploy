@@ -3,7 +3,7 @@
 import os
 import platform
 from pathlib import Path
-from whl_deploy.common import (
+from whl_deploy.utils.common import (
     get_os_info,
     execute_command,
     CommandExecutionError,
@@ -22,9 +22,9 @@ DOCKER_REPO_LIST_PATH = Path("/etc/apt/sources.list.d/docker.list")
 class DockerManager:
     """Manages Docker installation and uninstallation on Ubuntu systems."""
 
-    def __init__(self, mirror_region: str):
+    def __init__(self, mirror_region: str, os_info):
         """Initializes the manager, determines OS, architecture, and mirror_region settings."""
-        self.os_info = get_os_info()
+        self.os_info = os_info
         self.arch = platform.machine()
         self.arch_alias = self._get_arch_alias()
         self.mirror_region = mirror_region.lower()

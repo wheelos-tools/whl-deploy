@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import List, Optional, Union
 
-from whl_deploy.common import (
+from whl_deploy.utils.common import (
     execute_docker_command,
     CommandExecutionError,
     info,
@@ -12,7 +12,7 @@ from whl_deploy.common import (
     critical,
 )
 
-from whl_deploy.file_loader import FileLoader, FileFetcherError
+from whl_deploy.utils.file_loader import FileLoader, FileFetcherError
 
 # --- Configuration Constants ---
 DEFAULT_IMAGE_EXPORT_FILENAME = "docker_image.tar"

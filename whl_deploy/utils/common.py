@@ -2,7 +2,7 @@ import logging
 import os
 import subprocess
 import sys
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, TypeVar
 from pathlib import Path
 
 # --- Setup Logging ---
@@ -40,6 +40,7 @@ logger.setLevel(logging.INFO)  # Set default logging level
 logger.addHandler(handler)
 
 # Override default logging methods with custom names for convenience
+debug = logger.debug
 info = logger.info
 warning = logger.warning
 error = logger.error
@@ -98,7 +99,7 @@ def execute_command(
     if use_sudo:
         cmd_to_execute.insert(0, "sudo")
 
-    info(f"Executing: {' '.join(cmd_to_execute)}")
+    debug(f"Executing: {' '.join(cmd_to_execute)}")
 
     try:
         result = subprocess.run(
@@ -155,7 +156,6 @@ def get_os_info() -> Dict[str, str]:
     Gets OS distribution and codename.
     (This function is identical to the one in the optimized Docker script)
     """
-    info("Attempting to get OS information...")
     os_info = {}
     try:
         lsb_id = (
@@ -182,7 +182,7 @@ def get_os_info() -> Dict[str, str]:
         )
         os_info["id"] = lsb_id
         os_info["codename"] = lsb_codename
-        info(
+        debug(
             f"OS Info (lsb_release): ID={os_info.get('id')}, Codename={os_info.get('codename')}"
         )
     except (FileNotFoundError, CommandExecutionError):
@@ -196,7 +196,7 @@ def get_os_info() -> Dict[str, str]:
                         os_info["codename"] = (
                             line.strip().split("=")[1].strip('"').lower()
                         )
-            info(
+            debug(
                 f"OS Info (/etc/os-release): ID={os_info.get('id')}, Codename={os_info.get('codename')}"
             )
         except FileNotFoundError:
@@ -282,3 +282,94 @@ def ensure_dir(t_dir: Union[str, Path]) -> None:
             exc_info=True,
         )
         raise
+
+
+def prompt_for_confirmation(prompt_text: str, auto_confirm: bool) -> bool:
+    """
+    A unified prompt function.
+    Args:
+        prompt_text: The question to ask the user.
+        auto_confirm: If True, automatically returns True without prompting the user.
+
+    Returns:
+        True if the user confirms or if auto_confirm is True, False otherwise.
+    """
+    if auto_confirm:
+        info(f"'{prompt_text}'... proceeding automatically.")
+        return True
+
+    while True:
+        try:
+            user_input = input(f"❓ {prompt_text}? [Y/n]: ").strip().lower()
+            if user_input in ["y", "yes", ""]:
+                return True
+            elif user_input in ["n", "no"]:
+                warning(f"Skipping step: {prompt_text}")
+                return False
+            else:
+                warning("Invalid input. Please enter 'y' or 'n'.")
+        except KeyboardInterrupt:
+            warning("\nOperation interrupted by user.")
+            raise
+
+
+T = TypeVar("T")
+
+
+def prompt_for_choice(
+    prompt: str,
+    options: List[T],
+    default: Optional[T] = None,
+    auto_confirm: bool = False,
+) -> T:
+    """
+    Prompt user with a single-line style menu choice.
+
+    :param prompt: prompt message, e.g. "Select mirror"
+    :param options: list of options
+    :param default: default option (must be in options)
+    :param auto_confirm: if True, immediately return default
+    :return: the selected option
+    """
+    if default is not None and default not in options:
+        raise ValueError("default must be one of the options")
+    if auto_confirm:
+        if default is None:
+            raise ValueError("default required when auto_confirm is True")
+        print(f"{prompt} -> {default} (auto)")
+        return default
+
+    # Build a compact, one-line prompt string
+    opts = ", ".join(f"{i}:{opt}" for i, opt in enumerate(options, start=1))
+    default_index = options.index(default) + 1 if default is not None else None
+    default_hint = f"[{default_index}]" if default_index else ""
+    full_prompt = f"{prompt} ({opts}) {default_hint}: "
+
+    while True:
+        try:
+            sel = input(full_prompt).strip()
+            if sel == "":
+                if default is not None:
+                    return default
+                # no default, but no input — ask again
+                print("No choice given.")
+                continue
+
+            # try parse number
+            try:
+                idx = int(sel)
+            except ValueError:
+                print("Invalid input. Enter number.")
+                continue
+
+            if 1 <= idx <= len(options):
+                return options[idx - 1]
+            else:
+                print(f"Out of range: 1 to {len(options)}.")
+
+        except KeyboardInterrupt:
+            print("\nAborted.")
+            sys.exit(1)
+        except EOFError:
+            print("\nNo input, exit.")
+            sys.exit(1)

@@ -4,10 +4,10 @@ import shutil
 from pathlib import Path
 from typing import Optional, Union, Any
 
-from whl_deploy.common import info, error, warning, critical
-from whl_deploy.common import ensure_dir
-from whl_deploy.file_loader import FileLoader, FileFetcherError
-from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
+from whl_deploy.utils.common import info, error, warning, critical
+from whl_deploy.utils.common import ensure_dir
+from whl_deploy.utils.file_loader import FileLoader, FileFetcherError
+from whl_deploy.utils.archive_manager import ArchiveManager, ArchiveManagerError
 
 
 class CacheManagerError(Exception):

@@ -8,7 +8,7 @@ from typing import List, Optional, Union
 from urllib.parse import urlparse
 from pathlib import Path
 
-from whl_deploy.common import info, error, warning, critical
+from whl_deploy.utils.common import info, error, warning, critical
 
 # --- Custom Exceptions ---
 

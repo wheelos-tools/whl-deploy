@@ -6,14 +6,15 @@ import shutil
 from pathlib import Path
 from typing import Optional, Union, List
 
-from whl_deploy.common import info, warning, error, critical
+from whl_deploy.utils.common import info, warning, error, critical
 
-from whl_deploy.file_loader import FileLoader, FileFetcherError
-from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
-
+from whl_deploy.utils.file_loader import FileLoader, FileFetcherError
+from whl_deploy.utils.archive_manager import ArchiveManager, ArchiveManagerError
+from whl_deploy.host.config import WORKSPACE
 
 # --- Configuration Constants ---
-DEFAULT_MODEL_IMPORT_DIR = Path("modules/perception/production/data/perception")
+MODEL_IMPORT_DIR = "modules/perception/production/data/perception"
+DEFAULT_MODEL_IMPORT_DIR = WORKSPACE / MODEL_IMPORT_DIR
 DEFAULT_MODEL_EXPORT_FILENAME = "model_data.tar.gz"
 
 # --- Custom Exception for Model Operations ---

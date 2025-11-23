@@ -4,7 +4,7 @@ import os
 import platform
 import re
 from pathlib import Path
-from whl_deploy.common import (
+from whl_deploy.utils.common import (
     get_os_info,
     execute_command,
     CommandExecutionError,
@@ -35,10 +35,10 @@ def get_repo_base_url(mirror_region: str) -> str:
     based on whether a China mirror should be used.
     """
     if mirror_region == "cn":
-        info(f"Using China mirror repository: {USTC_NVIDIA_REPO_BASE_URL}")
+        info(f"NVIDIA docker repository: {USTC_NVIDIA_REPO_BASE_URL}")
         return USTC_NVIDIA_REPO_BASE_URL
     else:
-        info(f"Using official NVIDIA repository: {OFFICIAL_NVIDIA_REPO_BASE_URL}")
+        info(f"NVIDIA docker repository: {OFFICIAL_NVIDIA_REPO_BASE_URL}")
         return OFFICIAL_NVIDIA_REPO_BASE_URL
 
 
@@ -46,8 +46,8 @@ def get_repo_base_url(mirror_region: str) -> str:
 class NvidiaToolkitManager:
     """Manages NVIDIA Container Toolkit installation and uninstallation on Ubuntu systems."""
 
-    def __init__(self, mirror_region: str):
-        self.os_info = get_os_info()
+    def __init__(self, mirror_region: str, os_info):
+        self.os_info = os_info
         self.arch = platform.machine()
         self.arch_alias = self._get_arch_alias()
         # Initialize toolkit version, will be dynamically fetched during installation

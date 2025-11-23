@@ -5,10 +5,18 @@ import shutil
 from pathlib import Path
 from typing import Optional, Union
 
-from whl_deploy.common import info, warning, error, critical
-from whl_deploy.common import ensure_dir
-from whl_deploy.file_loader import FileLoader, FileFetcherError
-from whl_deploy.archive_manager import ArchiveManager, ArchiveManagerError
+from whl_deploy.utils.common import (
+    debug,
+    info,
+    warning,
+    error,
+    critical,
+    ensure_dir,
+    prompt_for_confirmation,
+)
+from whl_deploy.utils.file_loader import FileLoader, FileFetcherError
+from whl_deploy.utils.archive_manager import ArchiveManager, ArchiveManagerError
+from whl_deploy.host.config import WORKSPACE
 
 
 class SourcePackageManagerError(Exception):
@@ -17,9 +25,15 @@ class SourcePackageManagerError(Exception):
     pass
 
 
+class SourcePackageSkipError(Exception):
+    """Custom exception for SourcePackageManager specific errors."""
+
+    pass
+
+
 # --- Configuration Constants ---
 # Default directory where source code will be "active" or assumed to be for operations.
-DEFAULT_SOURCE_DIR = Path("apollo")
+DEFAULT_SOURCE_DIR = WORKSPACE
 
 # Default filename for exported source packages
 DEFAULT_SOURCE_EXPORT_FILENAME = "source_code.tar.gz"
@@ -53,7 +67,7 @@ class SourcePackageManager:
         self.file_fetcher = FileLoader()
         self.archive_manager = ArchiveManager()
 
-        info(
+        debug(
             f"Initialized SourcePackageManager. Default managed source directory: {self.source_code_dir}"
         )
 
@@ -62,7 +76,8 @@ class SourcePackageManager:
     ) -> None:
         """
         Prepares the target directory for new content.
-        Cleans existing content or raises an error if force_overwrite is False.
+        Prompts user for confirmation if existing content is found and
+        force_overwrite is False.
 
         Args:
             target_dir: The pathlib.Path object for the target directory.
@@ -77,20 +92,24 @@ class SourcePackageManager:
             )
             return  # Directory does not exist, do nothing as requested.
 
-        # If we reach here, target_dir exists. Now check its content.
+        # Check if target directory exists and contains files
         dir_not_empty = any(target_dir.iterdir())
 
         if dir_not_empty:
             if not force_overwrite:
-                raise SourcePackageManagerError(
-                    f"Target directory '{target_dir}' is not empty. "
-                    "Cannot proceed without force_overwrite=True. "
-                    "Please clear it manually or set force_overwrite to True."
-                )
+                # Prompt user for confirmation
+                if prompt_for_confirmation(
+                    f"Target directory '{target_dir}' is not empty. Overwrite it?",
+                    auto_confirm=False,
+                ):
+                    info(f"Proceeding to clean up directory: {target_dir}")
+                else:
+                    raise SourcePackageSkipError(
+                        f"Target directory '{target_dir}' is not empty. skip."
+                    )
 
-            info(
-                f"Force overwrite enabled. Cleaning up existing content in directory: {target_dir}"
-            )
+            # If confirmed, clean the target directory
+            info(f"Cleaning up existing content in directory: {target_dir}")
             try:
                 shutil.rmtree(target_dir)
                 info(f"Successfully cleaned old content from '{target_dir}'.")
@@ -119,17 +138,19 @@ class SourcePackageManager:
             force_overwrite: If True, overwrite existing content in output_path without asking.
                              If False and output_path is not empty, will raise an error.
         """
-        target_directory = Path(output_path).resolve().parent
+        target_directory = Path(output_path).resolve()
 
         info(
             f"Starting import of source package from '{input_path}' to '{target_directory}'..."
         )
 
         try:
-            self._prepare_target_directory(output_path, force_overwrite)
+            self._prepare_target_directory(target_directory, force_overwrite)
+        except SourcePackageSkipError as e:
+            return
         except SourcePackageManagerError as e:
             error(f"Source package import preparation failed: {e}")
-            raise  # Re-raise to signal a failure to the caller
+            raise
 
         local_archive_path: Optional[Path] = None
         try:
@@ -139,15 +160,13 @@ class SourcePackageManager:
             info(
                 f"Extracting source code archive '{local_archive_path}' to '{target_directory}'..."
             )
-
             self.archive_manager.decompress(
                 local_archive_path,
-                target_directory,
+                target_directory.parent,
                 target_top_level_dir_name=DEFAULT_SOURCE_DIR.name,
             )
 
             info(f"Source code imported successfully to '{target_directory}'!")
-
         except FileFetcherError as e:
             raise SourcePackageManagerError(
                 f"Failed to fetch source code archive from '{input_path}': {e}"
@@ -156,18 +175,18 @@ class SourcePackageManager:
             raise SourcePackageManagerError(
                 f"Failed to extract source code archive '{local_archive_path}' to '{target_directory}': {e}"
             )
-        except OSError as e:  # Catch OS-level errors during file operations
+        except OSError as e:
             raise SourcePackageManagerError(
                 f"File system error during import to '{target_directory}': {e}"
             )
-        except Exception as e:  # Catch any other unexpected errors
+        except Exception as e:
             critical(
                 f"An unexpected error occurred during source code import: {e}",
                 exc_info=True,
             )
             raise SourcePackageManagerError(f"An unexpected error occurred: {e}")
         finally:
-            # TODO(zero): Ensure temporary files from FileLoader are cleaned up
+            # Ensure temporary files from FileLoader are cleaned up
             # self.file_fetcher.cleanup_temp_files()
             pass
 

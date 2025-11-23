@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from whl_deploy.common import info, warning, error
+from whl_deploy.utils.common import info, warning, error
 
 
 class ArchiveManagerError(Exception):
