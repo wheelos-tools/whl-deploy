@@ -48,6 +48,10 @@ class ResourceExporter:
 
         info("--- 🎉 Full Data Export Complete ---")
 
+    def _export_resource(self, resource_key: str, output_path: str, force_overwrite):
+        method_name = f"export_{resource_key}"
+        getattr(self, method_name)(output_path, force_overwrite=False)
+
     def _prepare_temp_directory(self, package_path: str) -> Path:
         package_path_obj = Path(package_path)
         temp_extract_dir = package_path_obj.parent / f"{package_path_obj.stem}_exported"
@@ -55,13 +59,13 @@ class ResourceExporter:
         return temp_extract_dir
 
     # Resource export methods
-    def export_source_code(self, output_dir: Path):
+    def export_source_code(self, output_dir: Path, force_overwrite=False):
         info(f"Exporting source code to '{output_dir}'...")
         source_package_manager = SourcePackageManager()
         source_package_manager.export_source_package(DEFAULT_SOURCE_DIR, output_dir)
         info("--- ✅ Source Code Export Complete ---")
 
-    def export_docker_image(self, output_dir: Path):
+    def export_docker_image(self, output_dir: Path, force_overwrite=False):
         info(f"Exporting Docker image to '{output_dir}'...")
         docker_image_manager = DockerImageManager()
         docker_image_manager.save_images(
@@ -69,19 +73,19 @@ class ResourceExporter:
         )  # Replace with actual image name
         info("--- ✅ Docker Image Export Complete ---")
 
-    def export_maps(self, output_dir: Path):
+    def export_maps(self, output_dir: Path, force_overwrite=False):
         info(f"Exporting maps to '{output_dir}'...")
         map_manager = MapManager()
         map_manager.export_map(DEFAULT_MAP_IMPORT_DIR, output_dir)
         info("--- ✅ Maps Export Complete ---")
 
-    def export_models(self, output_dir: Path):
+    def export_models(self, output_dir: Path, force_overwrite=False):
         info(f"Exporting models to '{output_dir}'...")
         model_manager = ModelManager()
         model_manager.export_model(DEFAULT_MODEL_IMPORT_DIR, output_dir)
         info("--- ✅ Models Export Complete ---")
 
-    def export_cache(self, output_dir: Path):
+    def export_cache(self, output_dir: Path, force_overwrite=False):
         info(f"Exporting cache to '{output_dir}'...")
         cache_manager = CacheManager()
         cache_manager.export_cache(BAZEL_CACHE_DIR, output_dir)

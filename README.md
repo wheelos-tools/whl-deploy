@@ -73,11 +73,18 @@ whl-deploy setup nvidia_toolkit
 
 *   **Import Source Code Package**: Imports a zipped Apollo source code archive to a specified location.
     ```bash
-    whl-deploy import source_code --input=apollo-lite-main.zip
+    # China
+    whl-deploy import source_code -i=https://gitee.com/daohu527/apollo-lite.git
+
+    # github
+    whl-deploy import source_code -i=https://github.com/wheelos/apollo-lite.git
+
+    # local
+    whl-deploy import source_code -i=apollo-lite-main.zip
     ```
 *   **Export Source Code Package**: Packages the source code from the current Apollo environment for reuse elsewhere.
     ```bash
-    whl-deploy export source_code --output=apollo-main.zip
+    whl-deploy export source_code -o=apollo-lite-main.zip
     ```
 
 **b. Compiled Cache (Bazel Cache)**
@@ -86,11 +93,12 @@ The Bazel compilation cache is crucial for accelerating the Apollo build process
 
 *   **Import Compiled Cache**: Imports a pre-packaged Bazel cache.
     ```bash
-    whl-deploy import cache --input=bazel_cache.tar.gz
+    whl-deploy import cache -i=bazel_cache.tar.gz
     ```
 *   **Export Compiled Cache**: Exports the current Bazel cache for use across multiple machines or in future deployments.
     ```bash
-    whl-deploy export cache --output=bazel_cache.tar.gz
+    # only zip content
+    whl-deploy export cache -o=bazel_cache.tar.gz
     ```
 
 **c. Docker Images**
@@ -99,7 +107,7 @@ Manage Apollo's core container images.
 
 *   **Import Docker Image**: Imports a Docker image from a `.tar` file. This is useful for offline deployments or pre-loading images.
     ```bash
-    whl-deploy import docker_image --input=whl_docker_image.tar
+    whl-deploy import docker_image -i=whl_docker_image.tar
     ```
 *   **Export Docker Image**:
     *   **Export information about all currently recognized Apollo-related Docker images**:
@@ -108,9 +116,9 @@ Manage Apollo's core container images.
         ```
     *   **Export a specific Docker image to a `.tar` file**:
         ```bash
-        whl-deploy export docker_image --input=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 --output=cuda_image.tar
+        whl-deploy export docker_image -i=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 -o=cuda_image.tar
         ```
-        *   **Note**: Here, the `--input` parameter should specify the **name and tag of the image to be exported**. For example, to export an Apollo development image, use: `whl-deploy export docker_image --input=apollo:dev-latest --output=apollo_dev.tar`
+        *   **Note**: Here, the `-i` parameter should specify the **name and tag of the image to be exported**. For example, to export an Apollo development image, use: `whl-deploy export docker_image -i=apollo:dev-latest -o=apollo_dev.tar`
 
 **d. High-Definition Maps (HD Maps) (TODO - To Be Implemented)**
 
@@ -120,14 +128,14 @@ Manage Apollo's core container images.
 whl-deploy import maps -i="map_data.tar.gz"
 
 # san_mateo only
-whl-deploy import maps -i="your_map_dir/maps/san_mateo.tar.gz"
+whl-deploy import maps -i="your_map_dir/san_mateo.tar.gz"
 ```
-*   `whl-deploy export hd_maps --output=...`
+*   `whl-deploy export hd_maps -o=...`
 
 **e. AI Models (TODO - To Be Implemented)**
 
-*   `whl-deploy import models --input=...`
-*   `whl-deploy export models --output=...`
+*   `whl-deploy import models -i=...`
+*   `whl-deploy export models -o=...`
 
 ## 🤝 Contribution & Support
 

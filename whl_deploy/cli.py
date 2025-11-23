@@ -86,7 +86,7 @@ def configure_parser() -> argparse.ArgumentParser:
             required=True,
             help="Path to the resource package",
         )
-        p.add_argument("--output", type=str, help="Target directory for extraction")
+        p.add_argument("-o", "--output", type=str, help="Target directory for extraction")
         p.add_argument(
             "--noforce",
             action="store_false",
@@ -121,12 +121,14 @@ def configure_parser() -> argparse.ArgumentParser:
             resource, help=f"Export {resource.replace('_', ' ')}"
         )
         p.add_argument(
+            "-i",
             "--input",
             type=str,
-            required=True,
+            required=False,
             help="Path to the resource directory to export",
         )
         p.add_argument(
+            "-o",
             "--output",
             type=str,
             required=True,
@@ -176,10 +178,8 @@ def main():
             if args.resource == "all":
                 orchestrator.export_all(args.package)
             else:
-                # Call specific export method
-                method_name = f"export_{args.resource}"
-                getattr(orchestrator.resource_exporter, method_name)(
-                    args.input, args.output
+                orchestrator.resource_exporter._export_resource(
+                    args.resource, args.output, False
                 )
 
     except OrchestratorError as e:
@@ -189,7 +189,7 @@ def main():
         info("Operation cancelled by user.")
         sys.exit(1)
     except Exception as e:
-        critical(f"An unexpected critical error occurred: {e}", exc_info=True)
+        critical(f"An unexpected critical error occurred: {e}")
         sys.exit(1)
 
 

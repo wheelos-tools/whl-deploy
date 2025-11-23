@@ -160,6 +160,8 @@ class SourcePackageManager:
             info(
                 f"Extracting source code archive '{local_archive_path}' to '{target_directory}'..."
             )
+
+            # Note: Using target_directory.parent does not include `apollo`
             self.archive_manager.decompress(
                 local_archive_path,
                 target_directory.parent,
@@ -211,11 +213,8 @@ class SourcePackageManager:
             f"Preparing to export source code from '{source_directory}' to '{output_file_path}'."
         )
 
-        # Ensure the source directory for export exists and is accessible
-        ensure_dir(source_directory)
-
         # Validate source directory
-        if not source_directory.is_dir():
+        if not source_directory.exists():
             raise SourcePackageManagerError(
                 f"Source directory '{source_directory}' does not exist or is not a directory. Nothing to export."
             )

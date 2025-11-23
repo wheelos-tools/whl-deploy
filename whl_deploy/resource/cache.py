@@ -101,7 +101,7 @@ class CacheManager:
                              If False and output_path is not empty, will raise an error.
         """
         # Resolve output_path to a Path object for robust handling
-        target_directory = Path(output_path).resolve().parent
+        target_directory = Path(output_path).resolve()
 
         info(f"Preparing to import cache from '{input_path}' to '{target_directory}'.")
 
@@ -167,11 +167,8 @@ class CacheManager:
             f"Preparing to export cache from '{source_directory}' to '{output_file_path}'."
         )
 
-        # Ensure the source directory for export exists and is accessible
-        ensure_dir(source_directory)
-
         # Check if the source cache directory is empty
-        if not source_directory.is_dir():
+        if not source_directory.exists():
             raise CacheManagerError(
                 f"Source cache directory '{source_directory}' does not exist or is not a directory. Nothing to export."
             )
@@ -189,7 +186,7 @@ class CacheManager:
             info(
                 f"Compressing cache from '{source_directory}' to '{output_file_path}'..."
             )
-            self.archive_manager.compress(source_directory, output_file_path)
+            self.archive_manager.compress(source_directory, output_file_path, prefix_to_remove=source_directory)
             info(f"Cache exported successfully to '{output_file_path}'!")
         except ArchiveManagerError as e:
             raise CacheManagerError(
