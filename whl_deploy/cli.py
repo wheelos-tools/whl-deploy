@@ -10,6 +10,20 @@ from whl_deploy.host.env_manager import HostEnvManager
 from whl_deploy.host.config import config
 
 
+def handle_setup_all(args):
+    """Placeholder for 'setup' or 'setup all' logic"""
+    action = "Uninstalling" if args.uninstall else "Installing"
+    mode = "Non-interactive (-y)" if args.yes else "Interactive"
+    print(f"Executing: setup ALL (Action: {action}, Mode: {mode})")
+
+
+def handle_setup_component(component_name, args):
+    """Placeholder for 'setup [component]' logic"""
+    action = "Uninstalling" if args.uninstall else "Installing"
+    mode = "Non-interactive (-y)" if args.yes else "Interactive"
+    print(f"Executing: setup {component_name} (Action: {action}, Mode: {mode})")
+
+
 def configure_parser() -> argparse.ArgumentParser:
     """Configure the argument parser for the application."""
     parser = argparse.ArgumentParser(
@@ -31,29 +45,31 @@ def configure_parser() -> argparse.ArgumentParser:
     setup_parser = subparsers.add_parser(
         "setup", help="Install, uninstall or configure host env."
     )
-    setup_subparsers = setup_parser.add_subparsers(
-        dest="component", required=True, help="Component to setup"
-    )
-    p_setup_all = setup_subparsers.add_parser(
-        "all", help="Run the full interactive setup process."
-    )
-    p_setup_all.add_argument(
+
+    setup_parser.add_argument(
         "--uninstall", action="store_true", help="Perform uninstall instead of install."
     )
-    p_setup_all.add_argument(
+    setup_parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
         help='Assume "yes" to all prompts (non-interactive).',
     )
 
+    setup_parser.set_defaults(component="all", func=handle_setup_all)
+
+    setup_subparsers = setup_parser.add_subparsers(
+        dest="component", required=False, help="Component to setup"
+    )
+
+    p_setup_all = setup_subparsers.add_parser(
+        "all", help="Run the full interactive setup process."
+    )
+    p_setup_all.set_defaults(func=handle_setup_all)
+
     for comp in ["docker", "nvidia_toolkit"]:
         p = setup_subparsers.add_parser(comp, help=f"Manage {comp} setup individually.")
-        p.add_argument(
-            "--uninstall",
-            action="store_true",
-            help="Perform uninstall instead of install.",
-        )
+        p.set_defaults(func=lambda args, c=comp: handle_setup_component(c, args))
 
     # Import commands
     import_parser = subparsers.add_parser("import", help="Import data into the system.")
