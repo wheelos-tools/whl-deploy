@@ -1,4 +1,3 @@
-
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -9,21 +8,22 @@ version = "0.0.5"
 description = "A deployment tool for WheelOS."
 readme = "README.md"
 authors = [
-  { name = "daohu527", email = "daohu527@gmail.com" }
+  { name = "daohu527", email = "support@wheelos.cn" }
 ]
 urls = { Homepage = "https://github.com/wheelos-tools/whl-deploy", "Bug Tracker" = "https://github.com/wheelos-tools/whl-deploy/issues" }
 classifiers = [
-  "Development Status :: 3 - Alpha", # Project's development stage
+  "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3 :: Only", # Python 3 only
-  "License :: OSI Approved :: MIT License", # Specify license type
-  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
   "Intended Audience :: Developers",
-  "Topic :: Software Development :: Build Tools", # More specific category
+  "Topic :: Software Development :: Build Tools",
   "Topic :: Utilities"
 ]
 
@@ -33,8 +33,7 @@ requires-python = ">=3.8"
 # Runtime dependencies
 dependencies = [
   "requests",
-  "pyyaml",
-  "tqdm"
+  "pyyaml"
 ]
 
 # Keywords for PyPI search.
@@ -46,9 +45,8 @@ whl-deploy = "whl_deploy.cli:main"
 
 [tool.setuptools]
 include-package-data = true
-package-dir = { "" = "." } # Root directory for Python packages
+package-dir = { "" = "." }
 
 [tool.setuptools.packages.find]
-# Automatically discover Python packages.
 where = ["."]
-# exclude = ["tests*", "docs*"]
+exclude = ["tests*", "docs*"]

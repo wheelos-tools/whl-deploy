@@ -1,142 +1,80 @@
-# whl_deploy
-
-`whl_deploy` is a powerful tool **designed specifically for Apollo deployment**, aiming to significantly simplify the setup of Apollo environments and the import/export of resources. By automating key steps, `whl_deploy` ensures an efficient, consistent, and seamless Apollo deployment experience.
-
-## ✨ Key Features
-
-`whl_deploy` provides three core functionalities, covering the essential aspects of the Apollo deployment lifecycle:
-
-1.  **Automated Environment Setup**: Installs and configures Docker, NVIDIA Container Toolkit, and optimizes the system, providing an ideal environment for Apollo.
-2.  **Apollo Resource Import**: Unified import of core Apollo components, including Docker images, source code, AI models, high-definition maps, and compiled caches, drastically reducing initial setup and startup times.
-3.  **Resource Packaging & Distribution**: Packages pre-configured or downloaded Apollo resources into reusable bundles, facilitating rapid deployment across multiple machines, especially useful in offline environments.
-
 ## 🚀 Quick Start
 
-This section guides you on how to quickly install and use `whl_deploy`, focusing on the most common end-to-end deployment flow.
+`whl-deploy` simplifies Apollo deployment into two streamlined phases: **Packaging** (creating a portable release) and **Deploying** (setting up the host).
 
-### 1. Installation
+### 1. One-Step Deployment (Run/Install)
 
-To ensure compatibility, please upgrade your `setuptools` and `pip` first:
+This is the standard scenario for end-users. Using a generated release bundle (e.g., `wheelos_1.0.0_ubuntu22.04_x86_64_nvidia.tar`), you can restore the entire environment—including source code, Docker images, and data—with a single command.
+
+**The tool automates the following workflow:**
+1.  📦 **Unpack**: Extracts the bundle to the workspace.
+2.  📖 **Configure**: Loads the internal `manifest.yaml`.
+3.  🚀 **Deploy**: Installs artifacts (Source, Docker, Maps, Models).
+4.  ⚙️ **Post-Run**: Executes setup scripts (e.g., GPU checks).
 
 ```bash
-# Highly Recommended: Upgrade setuptools and pip first
-pip install setuptools -U
-pip install --upgrade pip
+# Standard installation from a release bundle
+whl-deploy run --bundle wheelos_1.0.0_ubuntu22.04_x86_64_nvidia.tar
 
-# Install whl-deploy
-pip install whl-deploy
+# Using aliases (Short syntax)
+whl-deploy r -b wheelos_1.0.0_ubuntu22.04_x86_64_nvidia.tar
 ```
 
-### 2. End-to-End Deployment - Express Mode!
+> **💡 Tip: Development Mode**
+> If you are working in a development environment where the code is already present (git cloned) and you don't have a tarball, you can run deployment directly using the local manifest:
+> ```bash
+> whl-deploy run --manifest whl_deploy/manifest.yaml
+> ```
 
-The following two commands are the essence of `whl_deploy`, covering the vast majority of Apollo deployment scenarios:
+---
 
-#### Step A: Prepare Host Environment
+### 2. Creating a Release (Pack)
 
-This command will automatically install Docker, the NVIDIA Container Toolkit, and perform necessary system configurations. This is the foundation for running Apollo.
+For developers or CI/CD pipelines, `whl-deploy` consolidates all resources defined in your `manifest.yaml` into a single, distributable file.
+
+**Key Features:**
+*   **Auto-Naming**: Automatically generates names like `{project}_{ver}_{os}_{arch}_{gpu}.tar`.
+*   **Smart Packing**: Fetches remote resources and standardizes directory structures.
+*   **No-Double-Compression**: Uses uncompressed tar for the outer shell to speed up deployment.
 
 ```bash
-whl-deploy setup all
-```
+# Pack using a specific manifest file
+whl-deploy pack --manifest whl_deploy/manifest.yaml
 
-#### Step B: Import Apollo Resources
-
-After setting up the environment, you can import all pre-packaged core Apollo resources, such as source code, Docker images, AI models, etc., with a single command. **Please ensure your `source` package is ready.**
-
-```bash
-whl-deploy import all --package=source
+# Using aliases
+whl-deploy p -m whl_deploy/manifest.yaml
 ```
 
 ---
 
-### 3. More Granular Control
+### 3. Configuration (Manifest)
 
-If you require more fine-grained control, `whl_deploy` also provides individual commands.
+`whl-deploy` adopts a "Configuration as Code" approach. The `manifest.yaml` defines **what** to pack (inputs) and **where** to deploy it (outputs).
 
-#### 3.1. Host Environment Configuration - Step-by-Step
+📄 **View the Example Manifest:**
+[👉 **whl_deploy/manifest.yaml**](https://github.com/wheelos-tools/whl-deploy/blob/main/whl_deploy/manifest.yaml)
 
-In some cases, you might want to configure the host environment step-by-step:
+---
 
-```bash
-# Only install and configure Docker
-whl-deploy setup docker
+### 4. Command Reference
 
-# Only install and configure NVIDIA Container Toolkit
-whl-deploy setup nvidia_toolkit
-```
+#### Global Options
+These flags apply to all commands:
+*   `-m, --manifest <path>`: Specify a custom manifest file path (Default: `./manifest.yaml`).
+*   `-v, --verbose`: Enable detailed debug logging.
 
-#### 3.2. Resource Import & Export - Category Management
+#### Subcommands
 
-`whl_deploy` allows you to manage various Apollo resources separately.
+| Command | Alias | Description | Key Flags |
+| :--- | :--- | :--- | :--- |
+| **`run`** | `r`, `install`, `i` | Deploy artifacts to the host system. | `-b, --bundle <path>`: Path to the `.tar` file to unpack. |
+| **`pack`** | `p` | Create a consolidated release package. | N/A (Uses manifest settings) |
 
-**a. Source Code**
+---
 
-*   **Import Source Code Package**: Imports a zipped Apollo source code archive to a specified location.
-    ```bash
-    # China
-    whl-deploy import source_code -i=https://gitee.com/daohu527/apollo-lite.git
+### 🤝 Contribution & Support
 
-    # github
-    whl-deploy import source_code -i=https://github.com/wheelos/apollo-lite.git
+`whl-deploy` aims to standardize the complex deployment of autonomous driving software. If you have questions, suggestions, or wish to contribute:
 
-    # local
-    whl-deploy import source_code -i=apollo-lite-main.zip
-    ```
-*   **Export Source Code Package**: Packages the source code from the current Apollo environment for reuse elsewhere.
-    ```bash
-    whl-deploy export source_code -o=apollo-lite-main.zip
-    ```
-
-**b. Compiled Cache (Bazel Cache)**
-
-The Bazel compilation cache is crucial for accelerating the Apollo build process.
-
-*   **Import Compiled Cache**: Imports a pre-packaged Bazel cache.
-    ```bash
-    whl-deploy import cache -i=bazel_cache.tar.gz
-    ```
-*   **Export Compiled Cache**: Exports the current Bazel cache for use across multiple machines or in future deployments.
-    ```bash
-    # only zip content
-    whl-deploy export cache -o=bazel_cache.tar.gz
-    ```
-
-**c. Docker Images**
-
-Manage Apollo's core container images.
-
-*   **Import Docker Image**: Imports a Docker image from a `.tar` file. This is useful for offline deployments or pre-loading images.
-    ```bash
-    whl-deploy import docker_image -i=whl_docker_image.tar
-    ```
-*   **Export Docker Image**:
-    *   **Export information about all currently recognized Apollo-related Docker images**:
-        ```bash
-        whl-deploy export docker_image --info
-        ```
-    *   **Export a specific Docker image to a `.tar` file**:
-        ```bash
-        whl-deploy export docker_image -i=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 -o=cuda_image.tar
-        ```
-        *   **Note**: Here, the `-i` parameter should specify the **name and tag of the image to be exported**. For example, to export an Apollo development image, use: `whl-deploy export docker_image -i=apollo:dev-latest -o=apollo_dev.tar`
-
-**d. High-Definition Maps (HD Maps) (TODO - To Be Implemented)**
-
-*
-```
-# all maps
-whl-deploy import maps -i="map_data.tar.gz"
-
-# san_mateo only
-whl-deploy import maps -i="your_map_dir/san_mateo.tar.gz"
-```
-*   `whl-deploy export hd_maps -o=...`
-
-**e. AI Models (TODO - To Be Implemented)**
-
-*   `whl-deploy import models -i=...`
-*   `whl-deploy export models -o=...`
-
-## 🤝 Contribution & Support
-
-`whl_deploy` aims to simplify Apollo deployment. If you have any questions, suggestions, or wish to contribute code, feel free to submit an Issue or a Pull Request.
+*   🐛 **Report Bugs**: Submit an Issue.
+*   🛠️ **Contribute**: Fork the repo and create a Pull Request.
