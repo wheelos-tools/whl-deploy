@@ -28,6 +28,20 @@ from whl_deploy.utils.common import configure_logging, error, info
 from whl_deploy.utils.system import SystemInfoCollector
 
 
+def handle_setup_all(args):
+    """Placeholder for 'setup' or 'setup all' logic"""
+    action = "Uninstalling" if args.uninstall else "Installing"
+    mode = "Non-interactive (-y)" if args.yes else "Interactive"
+    print(f"Executing: setup ALL (Action: {action}, Mode: {mode})")
+
+
+def handle_setup_component(component_name, args):
+    """Placeholder for 'setup [component]' logic"""
+    action = "Uninstalling" if args.uninstall else "Installing"
+    mode = "Non-interactive (-y)" if args.yes else "Interactive"
+    print(f"Executing: setup {component_name} (Action: {action}, Mode: {mode})")
+
+
 def configure_parser() -> argparse.ArgumentParser:
     """Configure the command-line argument parser."""
 
@@ -42,17 +56,57 @@ def configure_parser() -> argparse.ArgumentParser:
         help="Path to the manifest definition (default: manifest.yaml in current/extracted dir).",
     )
 
-    common_parser.add_argument(
-        "--verbose",
-        "-v",
+    subparsers = parser.add_subparsers(dest="command", help="Main command to execute")
+
+    # Setup commands
+    setup_parser = subparsers.add_parser(
+        "setup", help="Install, uninstall or configure host env."
+    )
+
+    setup_parser.add_argument(
+        "--uninstall", action="store_true", help="Perform uninstall instead of install."
+    )
+    setup_parser.add_argument(
+        "-y",
+        "--yes",
         action="store_true",
         help="Enable verbose logging for debugging.",
     )
 
-    # 2. Main Parser
-    parser = argparse.ArgumentParser(
-        description="WheelOS Deployment Tool (Pack & Install)",
-        formatter_class=argparse.RawTextHelpFormatter,
+    setup_parser.set_defaults(component="all", func=handle_setup_all)
+
+    setup_subparsers = setup_parser.add_subparsers(
+        dest="component", required=False, help="Component to setup"
+    )
+
+    p_setup_all = setup_subparsers.add_parser(
+        "all", help="Run the full interactive setup process."
+    )
+    p_setup_all.set_defaults(func=handle_setup_all)
+
+    for comp in ["docker", "nvidia_toolkit"]:
+        p = setup_subparsers.add_parser(comp, help=f"Manage {comp} setup individually.")
+        p.set_defaults(func=lambda args, c=comp: handle_setup_component(c, args))
+
+    # Import commands
+    import_parser = subparsers.add_parser("import", help="Import data into the system.")
+    import_subparsers = import_parser.add_subparsers(
+        dest="resource", required=True, help="Resource to import"
+    )
+    p_import_all = import_subparsers.add_parser(
+        "all", help="Run the full interactive import process."
+    )
+    p_import_all.add_argument(
+        "--package",
+        type=str,
+        required=True,
+        help="Path to the combined package .tar archive to import.",
+    )
+    p_import_all.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help='Assume "yes" to all prompts (non-interactive).',
     )
 
     subparsers = parser.add_subparsers(
