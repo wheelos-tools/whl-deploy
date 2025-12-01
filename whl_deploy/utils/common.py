@@ -155,6 +155,9 @@ def execute_command(
     if input_data is not None and isinstance(input_data, str):
         input_data = input_data.encode()
 
+    if input_data is not None:
+        text = False
+
     debug(f"Executing: {' '.join(cmd_list)}")
 
     try:

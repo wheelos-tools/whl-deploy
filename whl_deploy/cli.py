@@ -133,10 +133,6 @@ def main():
         orchestrator = Orchestrator(ctx)
         orchestrator.run()
 
-        # 7. Save Manifest
-        if ctx.manifest:
-            ctx.save_manifest()
-
         info(f"✨ Operation '{mode}' completed successfully!")
         sys.exit(0)
 

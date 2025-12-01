@@ -76,6 +76,12 @@ class GenericDataDeployStep(DeployStep):
         parent_dir = final_target_dir.parent
         parent_dir.mkdir(parents=True, exist_ok=True)
 
+        execute_command(
+            ["chmod", "a+rwx", str(parent_dir)],
+            use_sudo=True,
+            check=True
+        )
+
         # Create a unique temp dir on the SAME filesystem
         tmp_deploy_dir = parent_dir / f".data_tmp_{uuid.uuid4().hex[:8]}"
         tmp_deploy_dir.mkdir()

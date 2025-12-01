@@ -68,6 +68,8 @@ class BundlePackStep(DeployStep):
         if ctx.manifest_path and ctx.manifest_path.exists():
             dest_manifest = artifacts_root / "manifest.yaml"
             try:
+                # Save manifest
+                ctx.save_manifest()
                 shutil.copy2(ctx.manifest_path, dest_manifest)
                 info(f"   📄 Copied manifest to: {dest_manifest}")
             except Exception as e:

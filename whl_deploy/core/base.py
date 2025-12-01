@@ -133,7 +133,7 @@ class DeployContext:
             self.manifest["deployment"] = self.deployment
 
             with open(target_path, "w", encoding="utf-8") as f:
-                yaml.safe_dump(self.manifest, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+                yaml.safe_dump(self.manifest, f, default_flow_style=False, allow_unicode=True)
             info(f"💾 Manifest saved successfully to: {target_path}")
         except Exception as e:
             error(f"Failed to save manifest: {e}")
@@ -197,7 +197,7 @@ class DeployStep(ABC):
         info(f"🔵 [Step: {self.name}] Starting...")
         try:
             if self.check_if_done(ctx):
-                info(f"🟢 [Step: {self.name}] Already done. Skipping.")
+                info(f"[Step: {self.name}] Already done. Skipping.")
                 return
 
             self.resolve_config(ctx)
@@ -208,7 +208,7 @@ class DeployStep(ABC):
                 raise RuntimeError(f"Verification failed for {self.name}")
 
             self.post_process(ctx)
-            info(f"🟢 [Step: {self.name}] Completed.")
+            info(f"[Step: {self.name}] Completed.")
         except Exception as e:
             error(f"🔴 [Step: {self.name}] Failed: {e}")
             self.rollback(ctx)

@@ -113,7 +113,7 @@ class NvidiaContainerSetupStep(DeployStep):
         execute_command(
             ["gpg", "--dearmor", "-o", str(NVIDIA_TOOLKIT_KEYRING), "--yes"],
             use_sudo=True,
-            input_data=curl_res.stdout.decode(),
+            input_data=curl_res.stdout,
         )
 
         # 3. Add Repo List
@@ -190,7 +190,7 @@ class NvidiaContainerSetupStep(DeployStep):
                 use_sudo=True,
                 capture_output=True,
             )
-            if "nvidia" not in res.stdout.decode():
+            if "nvidia" not in res.stdout:
                 return False
 
             # Check 2: Is the CLI tool available?
