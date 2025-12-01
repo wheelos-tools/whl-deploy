@@ -1,52 +1,108 @@
+# Copyright 2025 The WheelOS Team. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Created Date: 2025-11-30
+# Author: daohu527@gmail.com
+
+
+
 import logging
 import os
 import subprocess
 import sys
-from typing import List, Optional, Dict, Union, TypeVar
+import shutil
+from typing import List, Optional, Dict, Union, TypeVar, Any
 from pathlib import Path
 
 # --- Setup Logging ---
-# Configure logging to output to stderr with color
+
+
+# Define ANSI color codes
+class Colors:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    GRAY = "\033[90m"
 
 
 class ColoredFormatter(logging.Formatter):
-    """Custom formatter to add color to log messages."""
+    """Custom formatter to add colors based on log level."""
 
-    COLORS = {
-        "INFO": "\033[34m\033[1m",  # Blue bold
-        "WARNING": "\033[33m\033[1m",  # Yellow bold
-        "ERROR": "\033[31m\033[1m",  # Red bold
-        "CRITICAL": "\033[31m\033[1m",  # Red bold
-        "RESET": "\033[0m",
+    FORMAT = "%(message)s"
+
+    FORMATS = {
+        logging.DEBUG: Colors.GRAY + " [DEBUG] " + Colors.RESET + FORMAT,
+        logging.INFO: Colors.BLUE + " [INFO]  " + Colors.RESET + FORMAT,
+        logging.WARNING: Colors.YELLOW + " [WARN]  " + Colors.RESET + FORMAT,
+        logging.ERROR: Colors.RED + " [ERROR] " + Colors.RESET + FORMAT,
+        logging.CRITICAL: Colors.RED
+        + Colors.BOLD
+        + " [FATAL] "
+        + Colors.RESET
+        + FORMAT,
     }
 
     def format(self, record):
-        log_message = super().format(record)
-        return f"[{self.COLORS.get(record.levelname, '')}{record.levelname}{self.COLORS['RESET']}] {log_message}"
+        log_fmt = self.FORMATS.get(record.levelno, self.FORMAT)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
 
 
-# Remove default handlers if any
-if logging.root.handlers:
-    for handler in logging.root.handlers:
-        logging.root.removeHandler(handler)
+def setup_logger(name: str = "whl_deploy") -> logging.Logger:
+    """Configures and returns a singleton logger instance."""
+    logger = logging.getLogger(name)
 
-# Setup a new handler for stderr
-handler = logging.StreamHandler(sys.stderr)
-formatter = ColoredFormatter("%(message)s")
-handler.setFormatter(formatter)
+    # Prevent adding multiple handlers if function is called repeatedly
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(ColoredFormatter())
+        logger.addHandler(handler)
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Set default logging level
-logger.addHandler(handler)
+        # Default level is INFO
+        logger.setLevel(logging.INFO)
 
-# Override default logging methods with custom names for convenience
+        # Prevent propagation to root logger to avoid double printing
+        logger.propagate = False
+
+    return logger
+
+
+def configure_logging(verbose: bool = False):
+    """Updates the log level based on verbosity flag."""
+    level = logging.DEBUG if verbose else logging.INFO
+    logger.setLevel(level)
+    if verbose:
+        logger.debug("Verbose logging enabled.")
+
+
+# --- Initialization ---
+
+# Initialize the default logger instance
+logger = setup_logger()
+
+# Export convenient aliases for use in other modules
 debug = logger.debug
 info = logger.info
 warning = logger.warning
 error = logger.error
 critical = logger.critical
 
-# --- Custom Exception for Command Execution Errors ---
+
+# --- Custom Exceptions ---
 
 
 class CommandExecutionError(Exception):
@@ -74,65 +130,80 @@ def execute_command(
     capture_output: bool = True,
     text: bool = True,
     use_sudo: bool = False,
-    input_data: Optional[bytes] = None,
+    input_data: Optional[Union[str, bytes]] = None,
+    cwd: Optional[str] = None,
+    log_output: bool = False,
 ) -> subprocess.CompletedProcess:
     """
     Executes a shell command using subprocess.run.
 
     Args:
-        command: The command and its arguments as a list of strings.
-        check: If True, raises CommandExecutionError for non-zero exit codes.
-        capture_output: If True, stdout and stderr are captured.
-        text: If True, stdout and stderr are decoded as text.
-        use_sudo: If True, prepends 'sudo' to the command if not already root.
-        input_data: Optional bytes data to pass to stdin.
-
-    Returns:
-        A subprocess.CompletedProcess object.
-
-    Raises:
-        CommandExecutionError: If 'check' is True and command fails.
-        FileNotFoundError: If the command executable is not found.
+        command: The command list.
+        check: Raise exception on non-zero exit code.
+        capture_output: Capture stdout/stderr.
+        text: Decode stdout/stderr as text.
+        use_sudo: Prepend 'sudo' to command.
+        input_data: String or bytes to pass to stdin.
+        cwd: Working directory.
+        log_output: If True, log stdout/stderr to info level.
     """
-    cmd_to_execute = list(command)  # Create a mutable copy
-
+    cmd_list = list(command)
     if use_sudo:
-        cmd_to_execute.insert(0, "sudo")
+        cmd_list.insert(0, "sudo")
 
-    debug(f"Executing: {' '.join(cmd_to_execute)}")
+    # Convert input string to bytes if necessary
+    if input_data is not None and isinstance(input_data, str):
+        input_data = input_data.encode()
+
+    if input_data is not None:
+        text = False
+
+    debug(f"Executing: {' '.join(cmd_list)}")
 
     try:
         result = subprocess.run(
-            cmd_to_execute,
+            cmd_list,
             capture_output=capture_output,
             text=text,
             input=input_data,
-            check=False,  # We handle checking explicitly
+            cwd=cwd,
+            check=False,  # Checked manually below
         )
 
-        # if result.stdout and capture_output:
-        #     for line in result.stdout.splitlines():
-        #         info(f"STDOUT: {line.strip()}")
-        if result.stderr and capture_output:
-            for line in result.stderr.splitlines():
-                info(f"STDERR: {line.strip()}")
+        if log_output and capture_output:
+            if result.stdout:
+                for line in result.stdout.splitlines():
+                    info(f"  [STDOUT] {line}")
+            if result.stderr:
+                for line in result.stderr.splitlines():
+                    warning(f"  [STDERR] {line}")
 
         if check and result.returncode != 0:
+            err_msg = (
+                f"Command failed (Exit: {result.returncode}): {' '.join(cmd_list)}"
+            )
+            # Log the output if it wasn't logged already so we know why it failed
+            if not log_output and capture_output:
+                if result.stderr:
+                    error(f"STDERR: {result.stderr.strip()}")
+                if result.stdout:
+                    debug(f"STDOUT: {result.stdout.strip()}")
+
             raise CommandExecutionError(
-                f"Command failed with exit code {result.returncode}",
+                err_msg,
                 returncode=result.returncode,
                 stdout=result.stdout,
                 stderr=result.stderr,
             )
+
         return result
+
     except FileNotFoundError:
         raise FileNotFoundError(
-            f"Command not found: '{command[0]}'. Please ensure it is installed and in your PATH."
+            f"Command not found: '{cmd_list[0]}'. Ensure it is installed/in PATH."
         )
     except Exception as e:
-        error(
-            f"An unexpected error occurred while executing '{' '.join(cmd_to_execute)}': {e}"
-        )
+        error(f"Unexpected execution error: {e}")
         raise
 
 
@@ -143,174 +214,142 @@ def execute_docker_command(
     check: bool = True,
     **kwargs,
 ) -> subprocess.CompletedProcess:
-    """
-    Wrapper for executing Docker commands. Automatically prepends 'sudo docker'.
-    """
-    full_command = ["docker"] + command_args
-    print(full_command)
-    return execute_command(full_command, capture_output, text, check, **kwargs)
+    """Wrapper for executing Docker commands with sudo."""
+    return execute_command(
+        ["docker"] + command_args,
+        capture_output=capture_output,
+        text=text,
+        check=check,
+        use_sudo=True,
+        **kwargs,
+    )
 
 
 def get_os_info() -> Dict[str, str]:
     """
-    Gets OS distribution and codename.
-    (This function is identical to the one in the optimized Docker script)
+    Gets OS distribution info (ID, VERSION_ID/CODENAME).
+    Normalized keys: 'ID', 'VERSION_ID', 'CODENAME'.
     """
     os_info = {}
-    try:
-        lsb_id = (
-            execute_command(
-                ["lsb_release", "-is"],
-                capture_output=True,
-                text=True,
-                check=True,
-                use_sudo=False,
-            )
-            .stdout.strip()
-            .lower()
-        )
-        lsb_codename = (
-            execute_command(
-                ["lsb_release", "-cs"],
-                capture_output=True,
-                text=True,
-                check=True,
-                use_sudo=False,
-            )
-            .stdout.strip()
-            .lower()
-        )
-        os_info["id"] = lsb_id
-        os_info["codename"] = lsb_codename
-        debug(
-            f"OS Info (lsb_release): ID={os_info.get('id')}, Codename={os_info.get('codename')}"
-        )
-    except (FileNotFoundError, CommandExecutionError):
-        info("lsb_release not found or failed, falling back to /etc/os-release.")
+
+    # Method 1: lsb_release
+    if shutil.which("lsb_release"):
         try:
-            with open("/etc/os-release", "r") as f:
-                for line in f:
-                    if line.startswith("ID="):
-                        os_info["id"] = line.strip().split("=")[1].strip('"').lower()
-                    elif line.startswith("VERSION_CODENAME="):
-                        os_info["codename"] = (
-                            line.strip().split("=")[1].strip('"').lower()
-                        )
-            debug(
-                f"OS Info (/etc/os-release): ID={os_info.get('id')}, Codename={os_info.get('codename')}"
+            res_id = (
+                execute_command(["lsb_release", "-is"], capture_output=True)
+                .stdout.strip()
+                .lower()
             )
-        except FileNotFoundError:
-            raise RuntimeError(
-                "Could not determine OS distribution. Neither lsb_release nor /etc/os-release found."
+            res_code = (
+                execute_command(["lsb_release", "-cs"], capture_output=True)
+                .stdout.strip()
+                .lower()
             )
-    return os_info
+            os_info["ID"] = res_id
+            os_info["CODENAME"] = res_code
+            # Attempt to get version ID as well
+            res_ver = execute_command(
+                ["lsb_release", "-rs"], capture_output=True
+            ).stdout.strip()
+            os_info["VERSION_ID"] = res_ver
+            return os_info
+        except Exception:
+            pass  # Fallback
 
-
-def ensure_dir(t_dir: Union[str, Path]) -> None:
-    resolved_path = Path(t_dir).resolve()
-
-    info(
-        f"Ensuring cache directory '{resolved_path}' exists and has correct permissions..."
-    )
-
-    # 1. Check if the directory already exists
-    directory_already_exists = False
+    # Method 2: /etc/os-release
     try:
-        # 'test -d' checks if path exists and is a directory.
-        # It typically doesn't require sudo unless parent directories are inaccessible.
-        execute_command(
-            ["test", "-d", str(resolved_path)], check=True, capture_output=True
-        )
-        # If 'test -d' succeeds (return code 0), the directory exists
-        directory_already_exists = True
-        info(f"Directory '{resolved_path}' already exists.")
-    except CommandExecutionError:
-        # 'test -d' failed, meaning the directory does not exist or is not a directory
-        info(f"Directory '{resolved_path}' does not exist or is not a directory.")
-        # Explicitly set to false in case of previous partial success
-        directory_already_exists = False
+        with open("/etc/os-release", "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    # remove quotes
+                    val = val.strip('"').strip("'")
+                    if key == "ID":
+                        os_info["ID"] = val.lower()
+                    elif key == "VERSION_CODENAME":
+                        os_info["CODENAME"] = val.lower()
+                    elif key == "VERSION_ID":
+                        os_info["VERSION_ID"] = val
+                    elif key == "UBUNTU_CODENAME" and "CODENAME" not in os_info:
+                        os_info["CODENAME"] = val.lower()
 
-    # 2. Create the directory if it doesn't exist
-    if not directory_already_exists:
+        # Default codename mapping if missing (simple fallback for common ubuntu versions)
+        if "CODENAME" not in os_info and os_info.get("ID") == "ubuntu":
+            v = os_info.get("VERSION_ID", "")
+            if v.startswith("20.04"):
+                os_info["CODENAME"] = "focal"
+            elif v.startswith("22.04"):
+                os_info["CODENAME"] = "jammy"
+            elif v.startswith("24.04"):
+                os_info["CODENAME"] = "noble"
+
+        return os_info
+    except FileNotFoundError:
+        raise RuntimeError("Cannot determine OS: /etc/os-release not found.")
+
+
+def ensure_dir(t_dir: Union[str, Path], mode: str = "0775") -> None:
+    """
+    Ensures a directory exists with specific permissions and ownership.
+    Uses sudo for creation/chown if necessary.
+    """
+    path = Path(t_dir).resolve()
+
+    info(f"Ensuring directory: {path}")
+
+    # 1. Create directory
+    if not path.exists():
         try:
-            info(f"Creating cache directory '{resolved_path}'...")
-            # 'mkdir -p' creates parent directories as needed and does not error if dir exists.
-            execute_command(["mkdir", "-p", str(resolved_path)], use_sudo=True)
-            info(f"Cache directory '{resolved_path}' created successfully.")
-        except CommandExecutionError as e:
-            # Catch the specific command execution error
-            error(f"Failed to create cache directory '{resolved_path}': {e}.")
-            raise CommandExecutionError(
-                f"Failed to create cache directory '{resolved_path}': {e}. "
-                "Please check permissions for path or parent directories."
-            )
-        except Exception as e:
-            # Catch any other unexpected errors during directory creation
-            critical(
-                f"An unexpected error occurred while creating directory '{resolved_path}': {e}",
-                exc_info=True,
-            )
-            raise
+            # Try python native first (faster, safer if no sudo needed)
+            path.mkdir(parents=True, mode=int(mode, 8))
+        except PermissionError:
+            # Fallback to sudo
+            info(f"Permission denied creating {path}, trying sudo...")
+            execute_command(["mkdir", "-p", str(path)], use_sudo=True)
+    elif not path.is_dir():
+        raise FileExistsError(f"Path '{path}' exists but is not a directory.")
 
-    # 3. Set permissions for the directory
-    # Use 0o775 (rwxrwxr-x): read/write/execute for owner and group, read/execute for others.
-    # This is suitable for shared directories where different users (e.g., build system users)
-    # might need access.
-    permission_mode = "0775"
-    local_user = os.getenv("USER")
+    # 2. Set Permissions & Ownership
+    # We always enforce this to ensure consistency
+    local_user = os.getenv("USER") or os.getenv("SUDO_USER")
+    if not local_user:
+        warning("Could not detect user, skipping chown.")
+        return
+
     try:
-        info(f"Setting permissions {permission_mode} for '{resolved_path}'...")
-        # 'chmod' may require sudo if the directory is owned by root or another user.
-        execute_command(["chmod", permission_mode, str(resolved_path)], use_sudo=True)
+        # Try changing ownership (requires sudo usually if not owned by user)
+        # Optimization: Check stat first? No, just force ensure.
+        cmd = ["chown", f"{local_user}:{local_user}", str(path)]
         execute_command(
-            ["chown", f"{local_user}:{local_user}", str(resolved_path)], use_sudo=True
-        )
-        info(
-            f"Cache directory '{resolved_path}' is prepared with permissions {permission_mode}."
-        )
-    except CommandExecutionError as e:
-        # Catch the specific command execution error
-        error(f"Failed to set permissions for '{resolved_path}': {e}.")
-        raise CommandExecutionError(
-            f"Failed to set permissions for '{resolved_path}': {e}. "
-            "Please ensure the user running this script has appropriate privileges (e.g., sudo)."
-        )
+            cmd, use_sudo=True, check=False
+        )  # Warn but don't fail if user doesn't exist
+
+        # Set Mode
+        execute_command(["chmod", mode, str(path)], use_sudo=True)
     except Exception as e:
-        # Catch any other unexpected errors during permission setting
-        critical(
-            f"An unexpected error occurred while setting permissions for '{resolved_path}': {e}",
-            exc_info=True,
-        )
-        raise
+        warning(f"Failed to set permissions on {path}: {e}")
 
 
-def prompt_for_confirmation(prompt_text: str, auto_confirm: bool) -> bool:
-    """
-    A unified prompt function.
-    Args:
-        prompt_text: The question to ask the user.
-        auto_confirm: If True, automatically returns True without prompting the user.
-
-    Returns:
-        True if the user confirms or if auto_confirm is True, False otherwise.
-    """
+def prompt_for_confirmation(prompt_text: str, auto_confirm: bool = False) -> bool:
     if auto_confirm:
-        info(f"'{prompt_text}'... proceeding automatically.")
+        info(f"'{prompt_text}'... (Auto-Confirmed)")
         return True
 
     while True:
         try:
-            user_input = input(f"❓ {prompt_text}? [Y/n]: ").strip().lower()
-            if user_input in ["y", "yes", ""]:
+            choice = input(f"❓ {prompt_text}? [Y/n]: ").strip().lower()
+            if choice in ("y", "yes", ""):
                 return True
-            elif user_input in ["n", "no"]:
-                warning(f"Skipping step: {prompt_text}")
+            if choice in ("n", "no"):
+                warning("❌ Operation cancelled by user.")
                 return False
-            else:
-                warning("Invalid input. Please enter 'y' or 'n'.")
-        except KeyboardInterrupt:
-            warning("\nOperation interrupted by user.")
-            raise
+        except (KeyboardInterrupt, EOFError):
+            print()  # New line
+            warning("❌ Operation interrupted.")
+            return False
 
 
 T = TypeVar("T")
@@ -323,53 +362,41 @@ def prompt_for_choice(
     auto_confirm: bool = False,
 ) -> T:
     """
-    Prompt user with a single-line style menu choice.
-
-    :param prompt: prompt message, e.g. "Select mirror"
-    :param options: list of options
-    :param default: default option (must be in options)
-    :param auto_confirm: if True, immediately return default
-    :return: the selected option
+    CLI Menu for selection.
     """
     if default is not None and default not in options:
-        raise ValueError("default must be one of the options")
+        raise ValueError(f"Default '{default}' not in options: {options}")
+
     if auto_confirm:
         if default is None:
-            raise ValueError("default required when auto_confirm is True")
-        print(f"{prompt} -> {default} (auto)")
+            # If no default but auto_confirm, pick first
+            return options[0]
+        info(f"{prompt} -> {default} (Auto)")
         return default
 
-    # Build a compact, one-line prompt string
-    opts = ", ".join(f"{i}:{opt}" for i, opt in enumerate(options, start=1))
-    default_index = options.index(default) + 1 if default is not None else None
-    default_hint = f"[{default_index}]" if default_index else ""
-    full_prompt = f"{prompt} ({opts}) {default_hint}: "
+    # Display Menu
+    print(f"\n🔍 {prompt}:")
+    for idx, opt in enumerate(options, 1):
+        is_default = " *" if opt == default else ""
+        print(f"  {idx}. {opt}{is_default}")
 
     while True:
         try:
-            sel = input(full_prompt).strip()
-            if sel == "":
-                if default is not None:
-                    return default
-                # no default, but no input — ask again
-                print("No choice given.")
-                continue
+            sel = input(f"Select [1-{len(options)}]: ").strip()
 
-            # try parse number
-            try:
-                idx = int(sel)
-            except ValueError:
-                print("Invalid input. Enter number.")
-                continue
+            # Default on Enter
+            if not sel and default is not None:
+                return default
 
+            idx = int(sel)
             if 1 <= idx <= len(options):
-                return options[idx - 1]
+                choice = options[idx - 1]
+                info(f"Selected: {choice}")
+                return choice
             else:
-                print(f"Out of range: 1 to {len(options)}.")
-
-        except KeyboardInterrupt:
-            print("\nAborted.")
-            sys.exit(1)
-        except EOFError:
-            print("\nNo input, exit.")
-            sys.exit(1)
+                print(f"Invalid selection. Please enter 1-{len(options)}.")
+        except ValueError:
+            print("Please enter a number.")
+        except (KeyboardInterrupt, EOFError):
+            print()
+            raise SystemExit("Aborted.")

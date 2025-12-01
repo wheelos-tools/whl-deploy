@@ -1,16 +1,38 @@
-from tqdm import tqdm
+# Copyright 2025 The WheelOS Team. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Created Date: 2025-11-30
+# Author: daohu527@gmail.com
+
+
 import shutil
-import urllib.request
-from urllib.error import URLError, HTTPError
-import subprocess
 import tempfile
-from typing import List, Optional, Union
-from urllib.parse import urlparse
+import urllib.request
+import subprocess
+import cgi
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.error import URLError, HTTPError
+from typing import List, Optional, Union
 
-from whl_deploy.utils.common import info, error, warning, critical
 
-# --- Custom Exceptions ---
+from whl_deploy.utils.common import (
+    info,
+    warning,
+    execute_docker_command,
+    CommandExecutionError,
+)
 
 
 class FileFetcherError(Exception):
@@ -20,185 +42,193 @@ class FileFetcherError(Exception):
 
 
 class FileLoader:
-    def __init__(self, logger_instance=None):
-        # Stores only temporary directories created by FileLoader.
-        # Files downloaded into these directories will be cleaned up automatically.
+    """
+    A utility to fetch files or repositories from various sources (Local, HTTP/HTTPS, Git, Docker).
+    Handles temporary directory creation and cleanup automatically for downloaded artifacts.
+    """
+
+    def __init__(self):
+        # Stores only temporary directories created by this instance.
         self.temp_dirs: List[Path] = []
 
     def fetch(
         self, source_path: str, destination_dir: Optional[Union[str, Path]] = None
     ) -> Path:
         """
-        Fetches a resource from a given source (local path, URL, or Git repository).
+        Fetches a resource from a given source.
 
         Args:
-            source_path: The URL, local path, or Git repository URL.
-            destination_dir: Optional directory to place the fetched resource.
-                             - For files: downloads to this directory.
-                             - For Git repos: clones into a subdirectory within this directory.
-                               If None, a temporary directory will be created.
+            source_path: The URL (http, https), Git URI, Docker URI (docker://), or local path.
+            destination_dir: Optional directory.
+                             - For files: Download destination folder.
+                             - For Git: Parent folder for the clone.
+                             - If None: A temporary directory is created.
 
         Returns:
-            The local path (as a Path object) to the fetched resource.
-            - For local files/URLs: The path to the file.
-            - For Git repos: The path to the cloned repository directory.
-
-        Raises:
-            FileFetcherError: If fetching/cloning fails.
+            Path: The absolute path to the local file or cloned repository.
         """
         # Convert destination_dir to Path object if provided
-        if destination_dir is not None:
-            destination_dir = Path(destination_dir).resolve()
+        dest_path = Path(destination_dir).resolve() if destination_dir else None
 
-        if source_path.startswith(("http://", "https://", "ftp://")):
-            # Heuristic for Git repositories:
-            # Check for common Git hosting domains or typical Git URL patterns.
-            # This is a best-effort check. A robust solution might involve `git ls-remote`.
-            # For this context, it's acceptable.
-            if source_path.endswith(".git") or "/git/" in source_path:
-                info(f"Attempting to clone HTTPS/HTTP Git repository: {source_path}")
-                return self._git_clone(source_path, destination_dir)
-            else:
-                info(f"Downloading file from URL: {source_path}")
-                return self._download_file(source_path, destination_dir)
-        elif source_path.startswith("git@"):  # SSH Git protocol
-            info(f"Attempting to clone SSH Git repository: {source_path}")
-            return self._git_clone(source_path, destination_dir)
-        else:  # Assume local file or directory
-            # Resolve to absolute path
+        # 1. Git Repository Detection
+        if (
+            source_path.endswith(".git")
+            or source_path.startswith("git@")
+            or source_path.startswith("ssh://")
+            or "/git/" in source_path
+        ):
+            info(f"📡 Detected Git repository: {source_path}")
+            return self._git_clone(source_path, dest_path)
+
+        # 2. Docker Image Detection (docker://image:tag)
+        elif source_path.startswith("docker://"):
+            info(f"🐳 Detected Docker URI: {source_path}")
+            return self._download_docker_image(source_path, dest_path)
+
+        # 3. HTTP/HTTPS/FTP URL Detection
+        elif source_path.startswith(("http://", "https://", "ftp://")):
+            info(f"🌐 Detected URL resource: {source_path}")
+            return self._download_file(source_path, dest_path)
+
+        # 4. Local Path
+        else:
             local_path = Path(source_path).resolve()
-            info(f"Using local path: {local_path}")
+            info(f"📂 Using local path: {local_path}")
             if not local_path.exists():
                 raise FileFetcherError(f"Local path not found: {local_path}")
             return local_path
 
     def _download_file(self, url: str, destination_dir: Optional[Path]) -> Path:
-        """Helper to download a file from a URL."""
+        """Helper to download a file from a URL with progress bar."""
         if destination_dir is None:
-            # Create a temporary directory for the downloaded file
             temp_dir = Path(tempfile.mkdtemp(prefix="file_fetcher_"))
-            self.temp_dirs.append(temp_dir)  # Track the temp dir for cleanup
+            self.temp_dirs.append(temp_dir)
             destination_dir = temp_dir
         else:
-            # Ensure it's a Path object
             destination_dir.mkdir(parents=True, exist_ok=True)
 
-        # Parse URL to get a cleaner filename (removing query params etc.)
-        parsed_url = urlparse(url)
-        # Use filename from path or default to 'downloaded_file' if not available
-        suggested_filename = Path(parsed_url.path).name or "downloaded_file"
-        local_filename = (
-            destination_dir / suggested_filename
-        )  # Use Path for concatenation
+        info(f"⬇️  Downloading from {url}...")
 
-        info(f"Attempting to download '{url}' to '{local_filename}'...")
         try:
             with urllib.request.urlopen(url) as response:
-                # Get the total file size, if available (from Content-Length header)
-                total_size = response.length
-                block_size = 8192  # 8 KB chunks
-                # Create a progress bar using tqdm
-                # If total_size is available, tqdm will show a percentage and ETA.
-                # If total_size is not available (e.g., some servers don't provide Content-Length),
-                # tqdm will display a non-deterministic progress bar.
-                with tqdm(
-                    total=total_size,
-                    unit="B",
-                    unit_scale=True,
-                    desc=str(local_filename),
-                    miniters=1,
-                ) as pbar:
-                    with open(local_filename, "wb") as out_file:
-                        while True:
-                            buffer = response.read(block_size)
-                            # Break if no more data is read (end of file)
-                            if not buffer:
-                                break
-                            out_file.write(buffer)
-                            pbar.update(len(buffer))
-                return local_filename
+                # Determine Filename
+                content_disposition = response.info().get("Content-Disposition")
+                filename = None
+                if content_disposition:
+                    _, params = cgi.parse_header(content_disposition)
+                    filename = params.get("filename")
+
+                if not filename:
+                    filename = Path(urlparse(url).path).name
+                if not filename:
+                    filename = "downloaded_artifact"
+
+                local_filepath = destination_dir / filename
+
+                # Progress Bar
+                total_size = int(response.info().get("Content-Length", 0))
+                block_size = 8192
+
+                with open(local_filepath, "wb") as out_file:
+                    while True:
+                        buffer = response.read(block_size)
+                        if not buffer:
+                            break
+                        out_file.write(buffer)
+
+                info(f"✅ Download completed: {local_filepath}")
+                return local_filepath
+
         except (URLError, HTTPError) as e:
-            raise FileFetcherError(f"Failed to download file from '{url}': {e}")
+            raise FileFetcherError(f"Network error while downloading '{url}': {e}")
         except Exception as e:
-            raise FileFetcherError(f"An unexpected error occurred during download: {e}")
+            raise FileFetcherError(f"Unexpected error during download: {e}")
 
     def _git_clone(self, repo_url: str, destination_dir: Optional[Path]) -> Path:
         """Helper to clone a Git repository."""
-        # If no specific destination_dir is given, clone into a temporary directory
         if destination_dir is None:
             clone_parent_dir = Path(tempfile.mkdtemp(prefix="git_clone_"))
-            # Track the temp dir for cleanup
             self.temp_dirs.append(clone_parent_dir)
         else:
-            clone_parent_dir = destination_dir  # Already a Path object
+            clone_parent_dir = destination_dir
             clone_parent_dir.mkdir(parents=True, exist_ok=True)
-            info(f"Cloning repository into '{clone_parent_dir}'...")
 
-        # Git clone creates a subdirectory named after the repo.
-        # Extract repo name from URL to determine the final path.
-        # This is a heuristic and might need refinement for complex URLs or non-standard repo names.
-        # Get last part, remove extension if any
-        repo_name = Path(repo_url.split("/")[-1]).stem
-        cloned_repo_path = clone_parent_dir / repo_name
+        repo_name = Path(repo_url.rstrip("/").split("/")[-1]).stem
+        final_repo_path = clone_parent_dir / repo_name
 
-        # Handle existing target directory for clone
-        if cloned_repo_path.exists():
-            if (
-                destination_dir is None
-            ):  # If we created a temporary directory, always ensure it's clean
+        if final_repo_path.exists():
+            if destination_dir is None:
+                warning(f"Cleaning existing temp git directory: {final_repo_path}")
+                shutil.rmtree(final_repo_path)
+            else:
                 warning(
-                    f"Temporary clone directory '{cloned_repo_path}' already exists. Deleting and re-cloning to ensure freshness."
+                    f"Target git directory '{final_repo_path}' already exists. Skipping clone."
                 )
-                try:
-                    shutil.rmtree(cloned_repo_path)
-                except OSError as e:
-                    raise FileFetcherError(
-                        f"Failed to clean up existing temporary clone directory '{cloned_repo_path}': {e}"
-                    )
-            else:  # If user provided destination_dir, warn and return existing path
-                warning(
-                    f"Target clone directory '{cloned_repo_path}' already exists. "
-                    "Skipping clone to avoid overwriting. If you want to re-clone, delete it first or use a new destination."
-                )
-                return cloned_repo_path
+                return final_repo_path
+
+        info(f"🐑 Cloning '{repo_url}' into '{final_repo_path}'...")
 
         try:
-            # Use 'git clone --depth 1' for shallow clone if only latest version is needed, faster.
-            # Use full clone 'git clone' if history is required.
-            # For typical AD data setup, shallow clone is often sufficient.
-            command = ["git", "clone", "--depth", "1", repo_url, str(cloned_repo_path)]
-            info(f"Executing Git clone: {' '.join(command)}")
+            command = ["git", "clone", "--depth", "1", repo_url, str(final_repo_path)]
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            info(f"✅ Repository cloned successfully.")
+            return final_repo_path
 
-            # Capture output for better error messages
-            process = subprocess.run(
-                command, check=True, capture_output=True, text=True
-            )
-            info(f"Successfully cloned '{repo_url}' to '{cloned_repo_path}'")
-            return cloned_repo_path
         except FileNotFoundError:
-            raise FileFetcherError(
-                "Git command not found. Please ensure Git is installed and in your PATH."
-            )
+            raise FileFetcherError("Git command not found. Please install Git.")
         except subprocess.CalledProcessError as e:
-            raise FileFetcherError(
-                f"Git clone failed for '{repo_url}' with exit code {e.returncode}. "
-                "Ensure repository exists, you have access, and SSH keys/credentials are set up.\n"
-                f"STDOUT: {e.stdout.strip()}\nSTDERR: {e.stderr.strip()}"
-            )
+            raise FileFetcherError(f"Git clone failed: {e.stderr.strip()}")
         except Exception as e:
+            raise FileFetcherError(f"Git clone error: {e}")
+
+    def _download_docker_image(
+        self, docker_uri: str, destination_dir: Optional[Path]
+    ) -> Path:
+        """
+        Helper to pull a Docker image and save it as a .tar file.
+        Useful for packing scenarios.
+        """
+        image_tag = docker_uri.replace("docker://", "")
+
+        if destination_dir is None:
+            temp_dir = Path(tempfile.mkdtemp(prefix="docker_img_"))
+            self.temp_dirs.append(temp_dir)
+            destination_dir = temp_dir
+        else:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+
+        # Sanitize filename (replace / and : with _)
+        filename = f"{image_tag.replace('/', '_').replace(':', '_')}.tar"
+        output_path = destination_dir / filename
+
+        info(f"⚓ Pulling docker image '{image_tag}'...")
+        try:
+            # 1. Pull
+            execute_docker_command(["pull", image_tag], check=True)
+
+            # 2. Save to tar
+            info(f"💾 Saving image to '{output_path}'...")
+            execute_docker_command(
+                ["save", "-o", str(output_path), image_tag], check=True
+            )
+
+            return output_path
+
+        except CommandExecutionError as e:
             raise FileFetcherError(
-                f"An unexpected error occurred during Git clone: {e}"
+                f"Failed to pull/save docker image '{image_tag}': {e.stderr or e}"
             )
 
     def cleanup_temp_files(self) -> None:
-        """Removes any temporary directories created during fetching."""
+        """Removes any temporary directories created during this session."""
+        if not self.temp_dirs:
+            return
+
+        info(f"🧹 Cleaning up {len(self.temp_dirs)} temporary location(s)...")
         for temp_dir in self.temp_dirs:
             if temp_dir.exists():
                 try:
-                    if temp_dir.is_dir():
-                        info(f"Cleaning up temporary directory: {temp_dir}")
-                        shutil.rmtree(temp_dir)
-                    # No need to handle files separately as we only track temp_dirs
+                    shutil.rmtree(temp_dir)
                 except OSError as e:
-                    warning(f"Failed to remove temporary path '{temp_dir}': {e}")
+                    warning(f"Failed to remove temp dir '{temp_dir}': {e}")
         self.temp_dirs.clear()

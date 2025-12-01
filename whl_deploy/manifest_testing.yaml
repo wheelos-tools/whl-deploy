@@ -1,0 +1,40 @@
+meta:
+  project: wheelos
+  version: 1.0.0
+  description: WheelOS Deployment Manifest for Apollo Autonomous Driving
+environment:
+  os: ubuntu:22.04
+  arch: x86_64
+  gpu: NVIDIA
+  docker: 28.5.1
+  nvidia_toolkit: 1.17.8-1
+deployment:
+  workspace: .
+  project_root: apollo-lite
+  mirror_region: us
+  docker_gpg_url: ''
+artifacts:
+  docker_images:
+  - raw_source: registry.cn-hangzhou.aliyuncs.com/wheelos/apollo:dev-x86_64-20.04-20250710_2109
+    source: artifacts/docker/image.tar.gz
+    target: wheelos/apollo:dev-x86_64-20.04-20250710_2109
+  source_codes:
+  - raw_source: https://gitee.com/daohu527/apollo-lite.git
+    source: artifacts/src/code.tar.gz
+    target: .
+  data:
+  - name: 'Map: borregas_ave'
+    source: artifacts/data/map/borregas_ave.tar.gz
+    target: modules/map/data/borregas_ave
+  - name: Bazel Repo Cache
+    source: artifacts/cache/bazel_cache.tar.gz
+    target: /var/cache/bazel/repo_cache
+post_run:
+- name: Initialize Environment
+  script: docker/setup_host/config_system.sh
+  args: []
+  sudo: true
+- name: Add PATH Environment
+  script: docker/setup_host/host_env.sh
+  args: []
+  sudo: true
