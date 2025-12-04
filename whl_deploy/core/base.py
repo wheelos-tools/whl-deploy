@@ -15,7 +15,6 @@
 # Created Date: 2025-11-30
 # Author: daohu527@gmail.com
 
-
 from abc import ABC, abstractmethod
 import sys
 import yaml
@@ -44,6 +43,9 @@ class DeployContext:
     # --- Configuration Data ---
     manifest: Dict[str, Any] = field(default_factory=dict)
 
+    # --- System Collected Environment ---
+    os_info: Dict[str, str] = field(default_factory=dict)
+
     # Key Sections (Synced with manifest.yaml)
     # environment keys: os, arch, gpu, docker, nvidia_toolkit
     environment: Dict[str, str] = field(default_factory=dict)
@@ -68,7 +70,7 @@ class DeployContext:
                 self._parse_config()
 
         if not self.environment:
-             self._init_default_environment()
+            self._init_default_environment()
 
     def _load_manifest(self):
         if not self.manifest_path.exists():
@@ -93,7 +95,8 @@ class DeployContext:
 
         rel_workspace = self.deployment.get("workspace", ".")
         rel_project_root = self.deployment.get("project_root", "apollo")
-        self.project_root = (self.workspace / rel_workspace / rel_project_root).resolve()
+        self.project_root = (self.workspace / rel_workspace /
+                             rel_project_root).resolve()
 
         if self.mode == "install":
             info(f"📂 Target Project Root: {self.project_root}")
@@ -117,7 +120,8 @@ class DeployContext:
         if new_path:
             self.manifest_path = new_path.resolve()
         if not self.manifest_path or not self.manifest_path.exists():
-            raise FileNotFoundError(f"Manifest not found at: {self.manifest_path}")
+            raise FileNotFoundError(
+                f"Manifest not found at: {self.manifest_path}")
         info(f"🔄 Reloading manifest from: {self.manifest_path}")
         self._load_manifest()
         self._parse_config()
@@ -133,7 +137,10 @@ class DeployContext:
             self.manifest["deployment"] = self.deployment
 
             with open(target_path, "w", encoding="utf-8") as f:
-                yaml.safe_dump(self.manifest, f, default_flow_style=False, allow_unicode=True)
+                yaml.safe_dump(self.manifest,
+                               f,
+                               default_flow_style=False,
+                               allow_unicode=True)
             info(f"💾 Manifest saved successfully to: {target_path}")
         except Exception as e:
             error(f"Failed to save manifest: {e}")
@@ -143,6 +150,7 @@ class DeployContext:
     @property
     def env_os(self) -> str:
         return self.environment.get("os", "None")
+
     @env_os.setter
     def env_os(self, value: str):
         self.environment["os"] = value
@@ -150,13 +158,23 @@ class DeployContext:
     @property
     def env_arch(self) -> str:
         return self.environment.get("arch", "None")
+
     @env_arch.setter
     def env_arch(self, value: str):
         self.environment["arch"] = value
 
     @property
+    def env_arch_alias(self) -> str:
+        arch_map = {
+            "x86_64": "amd64",
+            "aarch64": "arm64",
+        }
+        return arch_map.get(self.env_arch, self.env_arch)
+
+    @property
     def env_gpu(self) -> str:
         return self.environment.get("gpu", "None")
+
     @env_gpu.setter
     def env_gpu(self, value: str):
         self.environment["gpu"] = value
@@ -164,6 +182,7 @@ class DeployContext:
     @property
     def env_docker(self) -> str:
         return self.environment.get("docker", "None")
+
     @env_docker.setter
     def env_docker(self, value: str):
         self.environment["docker"] = value
@@ -171,6 +190,7 @@ class DeployContext:
     @property
     def env_toolkit(self) -> str:
         return self.environment.get("nvidia_toolkit", "None")
+
     @env_toolkit.setter
     def env_toolkit(self, value: str):
         self.environment["nvidia_toolkit"] = value
@@ -179,17 +199,22 @@ class DeployContext:
     @property
     def docker_images(self) -> List[Dict[str, str]]:
         return self.manifest.get("artifacts", {}).get("docker_images", [])
+
     @property
     def source_codes(self) -> List[Dict[str, str]]:
         return self.manifest.get("artifacts", {}).get("source_codes", [])
+
     @property
     def data_artifacts(self) -> List[Dict[str, Any]]:
         return self.manifest.get("artifacts", {}).get("data", [])
+
     @property
     def post_run_scripts(self) -> List[Dict[str, Any]]:
         return self.manifest.get("post_run", [])
 
+
 class DeployStep(ABC):
+
     def __init__(self, name: str):
         self.name = name
 

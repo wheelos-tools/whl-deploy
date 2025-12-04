@@ -15,7 +15,6 @@
 # Created Date: 2025-11-30
 # Author: daohu527@gmail.com
 
-
 import os
 import shutil
 import uuid
@@ -74,13 +73,17 @@ class GenericDataDeployStep(DeployStep):
         # 2. Prepare Temp Directory for Atomic Swap
         # Ensure parent exists
         parent_dir = final_target_dir.parent
-        parent_dir.mkdir(parents=True, exist_ok=True)
+        if target_rel_path.startswith("/var/cache/bazel"):
+            # Special case for Bazel cache, create with sudo permissions
+            execute_command(["mkdir", "-p", str(parent_dir)],
+                            use_sudo=True,
+                            check=True)
+        else:
+            parent_dir.mkdir(parents=True, exist_ok=True)
 
-        execute_command(
-            ["chmod", "a+rwx", str(parent_dir)],
-            use_sudo=True,
-            check=True
-        )
+        execute_command(["chmod", "a+rwx", str(parent_dir)],
+                        use_sudo=True,
+                        check=True)
 
         # Create a unique temp dir on the SAME filesystem
         tmp_deploy_dir = parent_dir / f".data_tmp_{uuid.uuid4().hex[:8]}"
@@ -98,19 +101,25 @@ class GenericDataDeployStep(DeployStep):
 
             # --- STRATEGY 2: Raw Source (Fallback) ---
             elif raw_source:
-                info(f"⚠️  [{name}] Artifact missing. Fallback to raw source: {raw_source}")
+                info(
+                    f"⚠️  [{name}] Artifact missing. Fallback to raw source: {raw_source}"
+                )
                 fetched_resource = Path(self.file_fetcher.fetch(raw_source))
                 source_desc = "Raw Source"
 
             else:
-                raise FileNotFoundError(f"[{name}] Neither 'source' artifact nor 'raw_source' available.")
+                raise FileNotFoundError(
+                    f"[{name}] Neither 'source' artifact nor 'raw_source' available."
+                )
 
             # 3. Extract / Install to Temp Directory
             info(f"   🔓 Extracting to staging area...")
 
-            if self.archive_manager.is_archive(fetched_resource) or fetched_resource.is_dir():
+            if self.archive_manager.is_archive(
+                    fetched_resource) or fetched_resource.is_dir():
                 # If it's a known archive format, decompress
-                self.archive_manager.decompress(fetched_resource, tmp_deploy_dir)
+                self.archive_manager.decompress(fetched_resource,
+                                                tmp_deploy_dir)
 
             else:
                 # If it's a single regular file, copy it into the dir
@@ -125,9 +134,9 @@ class GenericDataDeployStep(DeployStep):
                 else:
                     # sudo privileges are required to delete the cache.
                     execute_command(
-                      ["rm", "-rf", str(final_target_dir)],
-                      use_sudo=True,
-                      check=True)
+                        ["rm", "-rf", str(final_target_dir)],
+                        use_sudo=True,
+                        check=True)
 
             os.rename(tmp_deploy_dir, final_target_dir)
             info(f"   ✅ Deployed to {final_target_dir} (via {source_desc})")
