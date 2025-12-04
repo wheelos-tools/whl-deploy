@@ -86,8 +86,7 @@ class ArchiveManager:
                 )
             except Exception as e:
                 raise ArchiveManagerError(
-                    f"Failed to copy directory '{archive_path}': {e}"
-                )
+                    f"Failed to copy directory '{archive_path}': {e}")
         elif archive_path.is_file():
             prefix_to_remove = None
 
@@ -96,24 +95,25 @@ class ArchiveManager:
                 with tarfile.open(archive_path, "r") as tar:
                     top_level_dirs = {
                         Path(m.name).parts[0]
-                        for m in tar.getmembers()
-                        if m.name.strip()
+                        for m in tar.getmembers() if m.name.strip()
                     }
                     if len(top_level_dirs) == 1:
                         prefix_to_remove = Path(top_level_dirs.pop())
-                self._decompress_tar(
-                    archive_path, final_destination, force_filter, prefix_to_remove
-                )
+                self._decompress_tar(archive_path, final_destination,
+                                     force_filter, prefix_to_remove)
             elif zipfile.is_zipfile(archive_path):
                 with zipfile.ZipFile(archive_path, "r") as zip_ref:
                     top_level_dirs = {
-                        Path(m).parts[0] for m in zip_ref.namelist() if m.strip()
+                        Path(m).parts[0]
+                        for m in zip_ref.namelist() if m.strip()
                     }
                     if len(top_level_dirs) == 1:
                         prefix_to_remove = Path(top_level_dirs.pop())
-                self._decompress_zip(archive_path, final_destination, prefix_to_remove)
+                self._decompress_zip(archive_path, final_destination,
+                                     prefix_to_remove)
             else:
-                raise ArchiveManagerError(f"Unsupported archive format: {archive_path}")
+                raise ArchiveManagerError(
+                    f"Unsupported archive format: {archive_path}")
         else:
             raise ArchiveManagerError(f"Archive not found: {archive_path}")
 
@@ -157,28 +157,57 @@ class ArchiveManager:
         destination_path: Path,
         prefix_to_remove: Optional[Path],
     ) -> None:
-        with zipfile.ZipFile(archive_path, "r") as zip_ref:
-            for member in zip_ref.namelist():
-                member_path = Path(member)
-                if prefix_to_remove:
-                    try:
-                        arcname = member_path.relative_to(prefix_to_remove)
-                    except ValueError:
+        try:
+            with zipfile.ZipFile(archive_path, 'r') as zf:
+                for member in zf.infolist():
+                    member_path = Path(member.filename)
+                    if member_path.is_absolute() or any(
+                            '..' == part for part in member_path.parts):
+                        warning(
+                            f"Skipping potentially malicious path in zip archive: {member.filename}"
+                        )
+                        continue
+                    if prefix_to_remove:
+                        try:
+                            arcname = member_path.relative_to(prefix_to_remove)
+                        except ValueError:
+                            arcname = member_path
+                    else:
                         arcname = member_path
-                else:
-                    arcname = member_path
-                full_path = destination_path / arcname
-                if member.endswith("/"):
-                    full_path.mkdir(parents=True, exist_ok=True)
-                else:
-                    full_path.parent.mkdir(parents=True, exist_ok=True)
-                    zip_ref.extract(member, destination_path)
-                    extracted_path = destination_path / member
-                    if extracted_path != full_path:
-                        shutil.move(str(extracted_path), str(full_path))
-                    if full_path.is_file():
-                        st = os.stat(full_path)
-                        os.chmod(full_path, st.st_mode | stat.S_IXUSR)
+                    full_path = destination_path / arcname
+                    if member.filename.endswith("/"):
+                        full_path.mkdir(parents=True, exist_ok=True)
+                    else:
+                        full_path.parent.mkdir(parents=True, exist_ok=True)
+
+                        attr = member.external_attr >> 16
+                        if attr & stat.S_IFLNK == stat.S_IFLNK:
+                            # Handle symbolic links
+                            link_target = zf.read(
+                                member.filename).decode('utf-8')
+                            os.symlink(link_target, full_path)
+                            continue
+
+                        # regular file
+                        member.filename = full_path.as_posix()
+                        extracted_path = zf.extract(member,
+                                                    path=destination_path)
+                        if extracted_path != full_path:
+                            shutil.move(str(extracted_path), str(full_path))
+
+                        # Extract the permission bits (last 9 bits of external_attr >> 16)
+                        # and apply them with os.chmod
+                        mode = attr & 0o777
+                        if mode:
+                            try:
+                                os.chmod(full_path, mode)
+                            except OSError as e:
+                                warning(r'Could not set permissions for'
+                                        f' {full_path}: {e}')
+        except zipfile.BadZipFile as e:
+            raise ArchiveManagerError(
+                f"Failed to read zip archive '{archive_path}': {e}. Is it corrupted?"
+            )
 
     def compress(
         self,
@@ -218,7 +247,8 @@ class ArchiveManager:
         elif output_path.suffix == ".gz" and output_path.stem.endswith(".tar"):
             archive_type = "tar"
             mode = "w:gz"
-        elif output_path.suffix == ".bz2" and output_path.stem.endswith(".tar"):
+        elif output_path.suffix == ".bz2" and output_path.stem.endswith(
+                ".tar"):
             archive_type = "tar"
             mode = "w:bz2"
         elif output_path.suffix == ".tar":
@@ -228,33 +258,35 @@ class ArchiveManager:
             # Default to .tar.gz if suffix is not recognized
             warning(
                 f"Unsupported output archive format suffix for '{output_path.name}'. "
-                f"Defaulting to '.tar.gz'."
-            )
+                f"Defaulting to '.tar.gz'.")
             output_path = output_path.with_suffix(".tar.gz")
             archive_type = "tar"
             mode = "w:gz"
 
         try:
             if archive_type == "zip":
-                with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                with zipfile.ZipFile(output_path, "w",
+                                     zipfile.ZIP_DEFLATED) as zf:
                     if source_path.is_dir():
                         for root, _, files in os.walk(source_path):
                             for file in files:
                                 file_path = Path(root) / file
                                 # Calculate arcname relative to source_path, removing prefix
                                 if prefix_to_remove:
-                                    rel_path = file_path.relative_to(prefix_to_remove)
+                                    rel_path = file_path.relative_to(
+                                        prefix_to_remove)
                                 else:
-                                    rel_path = file_path.relative_to(source_path)
+                                    rel_path = file_path.relative_to(
+                                        source_path)
 
-                                final_arcname = (
-                                    Path(arcname_in_archive or source_path.name)
-                                    / rel_path
-                                )
+                                final_arcname = (Path(arcname_in_archive
+                                                      or source_path.name) /
+                                                 rel_path)
                                 zf.write(file_path, arcname=str(final_arcname))
 
                     else:  # Single file
-                        final_arcname = Path(arcname_in_archive or source_path.name)
+                        final_arcname = Path(arcname_in_archive
+                                             or source_path.name)
                         zf.write(source_path, arcname=str(final_arcname))
 
             elif archive_type == "tar":
@@ -264,17 +296,15 @@ class ArchiveManager:
                         for item in os.listdir(source_path):
                             item_path = source_path / item
                             if prefix_to_remove:
-                                arcname = item_path.relative_to(prefix_to_remove)
+                                arcname = item_path.relative_to(
+                                    prefix_to_remove)
                             else:
                                 arcname = item_path.relative_to(source_path)
 
                             tar.add(item_path, arcname=arcname)
                     else:  # Single file
-                        arcname = (
-                            source_path.relative_to(prefix_to_remove)
-                            if prefix_to_remove
-                            else source_path.name
-                        )
+                        arcname = (source_path.relative_to(prefix_to_remove)
+                                   if prefix_to_remove else source_path.name)
                         tar.add(source_path, arcname=arcname)
 
         except Exception as e:

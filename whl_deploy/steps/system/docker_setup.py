@@ -15,8 +15,8 @@
 # Created Date: 2025-11-30
 # Author: daohu527@gmail.com
 
-
 import os
+import getpass
 from pathlib import Path
 
 from whl_deploy.core.base import DeployStep, DeployContext
@@ -26,13 +26,13 @@ from whl_deploy.utils.common import (
     CommandExecutionError,
 )
 
-
 DOCKER_KEYRING_DIR = Path("/etc/apt/keyrings")
 DOCKER_GPG_KEY_PATH = DOCKER_KEYRING_DIR / "docker.gpg"
 DOCKER_REPO_LIST_PATH = Path("/etc/apt/sources.list.d/docker.list")
 
 
 class DockerSetupStep(DeployStep):
+
     def __init__(self):
         super().__init__("Setup Docker Engine")
 
@@ -51,16 +51,15 @@ class DockerSetupStep(DeployStep):
 
         # Construct apt source string
         self.repo_line = (
-            f"deb [arch={ctx.arch_alias} signed-by={DOCKER_GPG_KEY_PATH}] "
-            f"{repo_base} {ctx.os_info['codename']} stable\n"
-        )
+            f"deb [arch={ctx.env_arch_alias} signed-by={DOCKER_GPG_KEY_PATH}] "
+            f"{repo_base} {ctx.os_info['version_codename']} stable\n")
 
     def check_if_done(self, ctx: DeployContext) -> bool:
         # 1. Check if the command exists
         try:
-            res = execute_command(
-                ["docker", "info"], use_sudo=True, capture_output=True
-            )
+            res = execute_command(["docker", "info"],
+                                  use_sudo=True,
+                                  capture_output=True)
             info("Docker is running correctly.")
             return True
         except CommandExecutionError:
@@ -75,19 +74,21 @@ class DockerSetupStep(DeployStep):
             use_sudo=True,
         )
         execute_command(
-            ["install", "-m", "0755", "-d", str(DOCKER_KEYRING_DIR)], use_sudo=True
-        )
+            ["install", "-m", "0755", "-d",
+             str(DOCKER_KEYRING_DIR)],
+            use_sudo=True)
 
     def run_action(self, ctx: DeployContext):
         # 1. Configure GPG
         info(f"Downloading GPG key from {ctx.docker_gpg_url}...")
-        curl_res = execute_command(
-            ["curl", "-fsSL", ctx.docker_gpg_url], use_sudo=False, capture_output=True
-        )
+        curl_res = execute_command(["curl", "-fsSL", ctx.docker_gpg_url],
+                                   use_sudo=False,
+                                   capture_output=True)
         execute_command(
-            ["gpg", "--dearmor", "-o", str(DOCKER_GPG_KEY_PATH), "--yes"],
+            ["gpg", "--dearmor", "-o",
+             str(DOCKER_GPG_KEY_PATH), "--yes"],
             use_sudo=True,
-            input_data=curl_res.stdout.decode(),
+            input_data=curl_res.stdout,
         )
 
         # 2. Configure Repo
@@ -116,9 +117,10 @@ class DockerSetupStep(DeployStep):
         )
 
         # 4. Start service
-        execute_command(["systemctl", "enable", "--now", "docker"], use_sudo=True)
+        execute_command(["systemctl", "enable", "--now", "docker"],
+                        use_sudo=True)
 
         # 5. Configure current user permissions (optional)
-        user = os.getlogin()
+        user = getpass.getuser()
         if user:
             execute_command(["usermod", "-aG", "docker", user], use_sudo=True)

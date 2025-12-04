@@ -15,7 +15,6 @@
 # Created Date: 2025-11-30
 # Author: daohu527@gmail.com
 
-
 import platform
 import subprocess
 import shutil
@@ -24,6 +23,7 @@ from pathlib import Path
 from typing import Dict
 
 from whl_deploy.utils.common import info, warning, debug
+
 
 class SystemInfoCollector:
     """
@@ -44,6 +44,7 @@ class SystemInfoCollector:
         # 2. Detect OS (Distro & Version)
         os_raw = SystemInfoCollector._detect_os()
         os_str = f"{os_raw.get('id', 'linux')}:{os_raw.get('version_id', 'unknown')}"
+        ctx.os_info = os_raw  # Store raw OS info in context
 
         # 3. Detect GPU Presence
         has_gpu = SystemInfoCollector._check_nvidia_gpu()
@@ -53,7 +54,8 @@ class SystemInfoCollector:
         docker_ver = SystemInfoCollector._detect_docker_version()
 
         # 5. Detect NVIDIA Toolkit (only if GPU present)
-        toolkit_ver = SystemInfoCollector._detect_nvidia_toolkit() if has_gpu else "None"
+        toolkit_ver = SystemInfoCollector._detect_nvidia_toolkit(
+        ) if has_gpu else "None"
 
         # --- Update Context Environment Directly ---
         ctx.env_arch = arch
@@ -90,10 +92,7 @@ class SystemInfoCollector:
                     if "=" in line:
                         key, value = line.strip().split("=", 1)
                         value = value.strip('"').strip("'")
-                        if key == "ID":
-                            os_info["id"] = value.lower()
-                        elif key == "VERSION_ID":
-                            os_info["version_id"] = value.lower()
+                        os_info[key.lower()] = value.lower()
         except Exception:
             pass
         return os_info
@@ -103,10 +102,11 @@ class SystemInfoCollector:
         if shutil.which("nvidia-smi") is None:
             return False
         try:
-            subprocess.run(
-                ["nvidia-smi", "-L"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, check=True
-            )
+            subprocess.run(["nvidia-smi", "-L"],
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE,
+                           timeout=5,
+                           check=True)
             return True
         except Exception:
             return False
@@ -116,10 +116,11 @@ class SystemInfoCollector:
         if shutil.which("docker") is None:
             return "None"
         try:
-            result = subprocess.run(
-                ["docker", "--version"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5
-            )
+            result = subprocess.run(["docker", "--version"],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    text=True,
+                                    timeout=5)
             if result.returncode == 0:
                 match = re.search(r"version\s+([0-9.]+)", result.stdout)
                 return match.group(1) if match else "detected"
@@ -131,10 +132,13 @@ class SystemInfoCollector:
     def _detect_nvidia_toolkit() -> str:
         # Check dpkg first
         try:
-            result = subprocess.run(
-                ["dpkg-query", "--showformat=${Version}", "--show", "nvidia-container-toolkit"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
+            result = subprocess.run([
+                "dpkg-query", "--showformat=${Version}", "--show",
+                "nvidia-container-toolkit"
+            ],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    text=True)
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
         except Exception:
@@ -143,10 +147,10 @@ class SystemInfoCollector:
         # Check CLI
         if shutil.which("nvidia-container-cli"):
             try:
-                result = subprocess.run(
-                    ["nvidia-container-cli", "--version"],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-                )
+                result = subprocess.run(["nvidia-container-cli", "--version"],
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE,
+                                        text=True)
                 match = re.search(r"version\s+([0-9.]+)", result.stdout)
                 if match:
                     return match.group(1)
