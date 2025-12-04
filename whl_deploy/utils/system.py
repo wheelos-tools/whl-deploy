@@ -99,17 +99,28 @@ class SystemInfoCollector:
 
     @staticmethod
     def _check_nvidia_gpu() -> bool:
-        if shutil.which("nvidia-smi") is None:
-            return False
-        try:
-            subprocess.run(["nvidia-smi", "-L"],
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE,
-                           timeout=5,
-                           check=True)
-            return True
-        except Exception:
-            return False
+        if shutil.which("nvidia-smi"):
+            try:
+                subprocess.run(["nvidia-smi", "-L"],
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               timeout=5,
+                               check=True)
+                return True
+            except Exception:
+                return False
+        elif shutil.which("jetson_release"):
+            try:
+                result = subprocess.run(["jetson_release"],
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE,
+                                        text=True,
+                                        timeout=5)
+                if "Jetson" in result.stdout:
+                    return True
+            except Exception:
+                return False
+        return False
 
     @staticmethod
     def _detect_docker_version() -> str:
