@@ -15,8 +15,6 @@
 # Created Date: 2025-11-30
 # Author: daohu527@gmail.com
 
-
-
 import os
 import stat
 import tarfile
@@ -44,7 +42,8 @@ class ArchiveManager:
         pass
 
     def is_archive(self, archive_path):
-        return tarfile.is_tarfile(archive_path) or zipfile.is_zipfile(archive_path)
+        return tarfile.is_tarfile(archive_path) or zipfile.is_zipfile(
+            archive_path)
 
     def decompress(
         self,
@@ -91,24 +90,9 @@ class ArchiveManager:
             prefix_to_remove = None
 
             if tarfile.is_tarfile(archive_path):
-                # Automatically detect top-level directory
-                with tarfile.open(archive_path, "r") as tar:
-                    top_level_dirs = {
-                        Path(m.name).parts[0]
-                        for m in tar.getmembers() if m.name.strip()
-                    }
-                    if len(top_level_dirs) == 1:
-                        prefix_to_remove = Path(top_level_dirs.pop())
                 self._decompress_tar(archive_path, final_destination,
                                      force_filter, prefix_to_remove)
             elif zipfile.is_zipfile(archive_path):
-                with zipfile.ZipFile(archive_path, "r") as zip_ref:
-                    top_level_dirs = {
-                        Path(m).parts[0]
-                        for m in zip_ref.namelist() if m.strip()
-                    }
-                    if len(top_level_dirs) == 1:
-                        prefix_to_remove = Path(top_level_dirs.pop())
                 self._decompress_zip(archive_path, final_destination,
                                      prefix_to_remove)
             else:
