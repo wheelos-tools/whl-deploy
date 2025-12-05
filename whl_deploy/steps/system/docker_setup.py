@@ -55,17 +55,28 @@ class DockerSetupStep(DeployStep):
             f"{repo_base} {ctx.os_info['version_codename']} stable\n")
 
     def check_if_done(self, ctx: DeployContext) -> bool:
-        # 1. Check if the command exists
+        # 1. Check if the command exists and user in docker group
         try:
-            res = execute_command(["docker", "info"],
-                                  use_sudo=True,
-                                  capture_output=True)
+            execute_command(["docker", "info"],
+                            use_sudo=True,
+                            capture_output=True)
             info("Docker is running correctly.")
-            return True
+            groups_result = execute_command(
+                ["groups", getpass.getuser()], capture_output=True)
+            if "docker" in groups_result.stdout:
+                info("Current user has docker group permissions.")
+                return True
+            else:
+                warning("Current user does not have docker group permissions.")
+                ctx.session['ensure_docker_group_only'] = True
+                return False
         except CommandExecutionError:
             return False
 
     def prepare(self, ctx: DeployContext):
+        if ctx.session.get('ensure_docker_group_only', False):
+            # only need to ensure user permissions, skip installation
+            return
         # Install prerequisite packages
         info("Installing prerequisite packages...")
         execute_command(["apt-get", "update", "-y"], use_sudo=True)
@@ -78,7 +89,22 @@ class DockerSetupStep(DeployStep):
              str(DOCKER_KEYRING_DIR)],
             use_sudo=True)
 
+    def ensure_docker_group(self):
+        user = getpass.getuser()
+        if user:
+            execute_command(["usermod", "-aG", "docker", user], use_sudo=True)
+            info(
+                f"Added user {user} to docker group. Please log out and log back in for changes to take effect."
+            )
+            info(
+                "Alternatively, you can run 'newgrp docker' in the current session."
+            )
+
     def run_action(self, ctx: DeployContext):
+        if ctx.session.get('ensure_docker_group_only', False):
+            # only need to ensure user permissions, skip installation
+            self.ensure_docker_group()
+            return
         # 1. Configure GPG
         info(f"Downloading GPG key from {ctx.docker_gpg_url}...")
         curl_res = execute_command(["curl", "-fsSL", ctx.docker_gpg_url],
@@ -117,10 +143,9 @@ class DockerSetupStep(DeployStep):
         )
 
         # 4. Start service
-        execute_command(["systemctl", "enable", "--now", "docker"],
-                        use_sudo=True)
+        if not os.path.exists('/.dockerenv'):
+            execute_command(["systemctl", "enable", "--now", "docker"],
+                            use_sudo=True)
 
         # 5. Configure current user permissions (optional)
-        user = getpass.getuser()
-        if user:
-            execute_command(["usermod", "-aG", "docker", user], use_sudo=True)
+        self.ensure_docker_group()

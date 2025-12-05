@@ -54,6 +54,14 @@ class DeployContext:
 
     # --- Runtime Settings ---
     mirror_region: str = "us"
+    # contains session-specific data, e.g., temporary paths, flags
+    # for example:
+    #   in step invoke phases,
+    #     1. check_if_done
+    #     2. prepare          -> creates temp dirs, sets flags
+    #     3. resolve_config   -> reads flags, temp dirs
+    #     4. run_action
+    session: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         self.workspace = self.workspace.resolve()

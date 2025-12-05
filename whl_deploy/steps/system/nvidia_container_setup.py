@@ -15,7 +15,7 @@
 # Created Date: 2025-11-30
 # Author: daohu527@gmail.com
 
-
+import os
 import re
 from pathlib import Path
 from whl_deploy.core.base import DeployStep, DeployContext
@@ -27,16 +27,16 @@ from whl_deploy.utils.common import (
     CommandExecutionError,
 )
 
-
 # Constant Definitions
 NVIDIA_TOOLKIT_KEYRING = Path(
-    "/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
-)
-NVIDIA_TOOLKIT_LIST = Path("/etc/apt/sources.list.d/nvidia-container-toolkit.list")
+    "/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg")
+NVIDIA_TOOLKIT_LIST = Path(
+    "/etc/apt/sources.list.d/nvidia-container-toolkit.list")
 DEFAULT_VERSION = "1.17.8-1"
 
 
 class NvidiaContainerSetupStep(DeployStep):
+
     def __init__(self):
         super().__init__("Setup NVIDIA Container Toolkit")
         self.toolkit_version = DEFAULT_VERSION
@@ -73,7 +73,9 @@ class NvidiaContainerSetupStep(DeployStep):
             ).stdout
 
             if "nvidia" in docker_info:
-                info("✅ NVIDIA Container Toolkit is already installed and active.")
+                info(
+                    "✅ NVIDIA Container Toolkit is already installed and active."
+                )
                 return True
         except Exception:
             pass
@@ -83,13 +85,12 @@ class NvidiaContainerSetupStep(DeployStep):
     def resolve_config(self, ctx: DeployContext):
         # 1. Determine Repository URL
         if ctx.mirror_region == "cn":
-            self.repo_base_url = "https://mirrors.ustc.edu.cn/nvidia-container-toolkit"
+            self.repo_base_url = "https://mirrors.ustc.edu.cn/libnvidia-container"
         else:
             self.repo_base_url = "https://nvidia.github.io/libnvidia-container"
 
         # 2. Determine Version Strategy
-        self.target_version_str = ctx.environment.get("nvidia_toolkit", "latest")
-        self.toolkit_version = self.target_version_str
+        self.target_version = ctx.environment.get("nvidia_toolkit", "latest")
 
     def prepare(self, ctx: DeployContext):
         """
@@ -98,7 +99,10 @@ class NvidiaContainerSetupStep(DeployStep):
         # 1. Install basic dependencies
         info("📦 Installing prerequisites (curl, gpg)...")
         execute_command(
-            ["apt-get", "install", "-y", "apt-transport-https", "curl", "gnupg"],
+            [
+                "apt-get", "install", "-y", "apt-transport-https", "curl",
+                "gnupg"
+            ],
             use_sudo=True,
         )
 
@@ -107,11 +111,13 @@ class NvidiaContainerSetupStep(DeployStep):
         gpg_url = f"{self.repo_base_url}/gpgkey"
 
         info(f"🔑 Fetching GPG key from {gpg_url}...")
-        curl_res = execute_command(
-            ["curl", "-fsSL", gpg_url], use_sudo=False, capture_output=True, check=True
-        )
+        curl_res = execute_command(["curl", "-fsSL", gpg_url],
+                                   use_sudo=False,
+                                   capture_output=True,
+                                   check=True)
         execute_command(
-            ["gpg", "--dearmor", "-o", str(NVIDIA_TOOLKIT_KEYRING), "--yes"],
+            ["gpg", "--dearmor", "-o",
+             str(NVIDIA_TOOLKIT_KEYRING), "--yes"],
             use_sudo=True,
             input_data=curl_res.stdout,
         )
@@ -131,9 +137,8 @@ class NvidiaContainerSetupStep(DeployStep):
 
         # Replace mirror domain if in CN environment
         if ctx.mirror_region == "cn":
-            list_content = list_content.replace(
-                "nvidia.github.io", "mirrors.ustc.edu.cn/nvidia-container-toolkit"
-            )
+            list_content = list_content.replace("nvidia.github.io",
+                                                "mirrors.ustc.edu.cn")
 
         # Inject [signed-by=...] for security
         list_content = re.sub(
@@ -142,9 +147,9 @@ class NvidiaContainerSetupStep(DeployStep):
             list_content,
         )
 
-        execute_command(
-            ["tee", str(NVIDIA_TOOLKIT_LIST)], use_sudo=True, input_data=list_content
-        )
+        execute_command(["tee", str(NVIDIA_TOOLKIT_LIST)],
+                        use_sudo=True,
+                        input_data=list_content)
 
         # 4. Update and calculate version
         info("🔄 Updating apt cache...")
@@ -158,7 +163,9 @@ class NvidiaContainerSetupStep(DeployStep):
         """
         # 1. Install Packages
         pkg_version = self.toolkit_version
-        info(f"⬇️ Installing NVIDIA Container Toolkit version: {pkg_version}...")
+        info(
+            f"⬇️ Installing NVIDIA Container Toolkit version: {pkg_version}..."
+        )
 
         # Ensure all related packages are pinned to the same version to avoid conflicts
         pkgs = [
@@ -172,12 +179,13 @@ class NvidiaContainerSetupStep(DeployStep):
         # 2. Configure Docker Runtime
         info("⚙️ Configuring Docker runtime...")
         execute_command(
-            ["nvidia-ctk", "runtime", "configure", "--runtime=docker"], use_sudo=True
-        )
+            ["nvidia-ctk", "runtime", "configure", "--runtime=docker"],
+            use_sudo=True)
 
         # 3. Restart Docker
         info("🔄 Restarting Docker service...")
-        execute_command(["systemctl", "restart", "docker"], use_sudo=True)
+        if not os.path.exists('/.dockerenv'):
+            execute_command(["systemctl", "restart", "docker"], use_sudo=True)
 
     def verify(self, ctx: DeployContext) -> bool:
         """
@@ -194,9 +202,9 @@ class NvidiaContainerSetupStep(DeployStep):
                 return False
 
             # Check 2: Is the CLI tool available?
-            execute_command(
-                ["nvidia-ctk", "--version"], capture_output=True, check=True
-            )
+            execute_command(["nvidia-ctk", "--version"],
+                            capture_output=True,
+                            check=True)
 
             return True
         except Exception:
@@ -206,6 +214,8 @@ class NvidiaContainerSetupStep(DeployStep):
         """
         Helper: Get the latest available version from apt-cache
         """
+        if not self.target_version and self.target_version != "latest":
+            return self.target_version
         try:
             res = execute_command(
                 ["apt-cache", "madison", "nvidia-container-toolkit"],
@@ -214,7 +224,8 @@ class NvidiaContainerSetupStep(DeployStep):
             ).stdout
 
             # Parse output format: " package | version | repo "
-            match = re.search(r"nvidia-container-toolkit \| (\S+?) \|", res)
+            match = re.search(r"nvidia-container-toolkit \|\s+(\S+?)\s+\|",
+                              res)
             if match:
                 ver = match.group(1).strip()
                 return ver

@@ -162,7 +162,7 @@ class SystemInfoCollector:
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE,
                                         text=True)
-                match = re.search(r"version\s+([0-9.]+)", result.stdout)
+                match = re.search(r"version:\s+([0-9.]+)", result.stdout)
                 if match:
                     return match.group(1)
             except Exception:
