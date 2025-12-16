@@ -22,6 +22,7 @@ from pathlib import Path
 from whl_deploy.core.base import DeployStep, DeployContext
 from whl_deploy.utils.common import (
     info,
+    warning,
     execute_command,
     CommandExecutionError,
 )
