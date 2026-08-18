@@ -125,13 +125,19 @@ class ArchiveManager:
                 full_path = destination_path / arcname
                 if member.isdir():
                     full_path.mkdir(parents=True, exist_ok=True)
+                elif member.issym() or member.islnk():
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    tar.extract(member, path=destination_path)
+                    extracted_path = destination_path / member.name
+                    if extracted_path != full_path:
+                        shutil.move(str(extracted_path), str(full_path))
                 else:
                     full_path.parent.mkdir(parents=True, exist_ok=True)
                     tar.extract(member, path=destination_path)
                     extracted_path = destination_path / member.name
                     if extracted_path != full_path:
                         shutil.move(str(extracted_path), str(full_path))
-                    if full_path.is_file():
+                    if full_path.is_file() and not full_path.is_symlink():
                         st = os.stat(full_path)
                         os.chmod(full_path, st.st_mode | stat.S_IXUSR)
 
